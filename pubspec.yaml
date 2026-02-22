@@ -1,0 +1,33 @@
+name: drive_master_app
+description: A DriveMaster Flutter application.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.2
+  get_it: ^7.6.7
+  qr_code_scanner_plus: ^2.0.12  # Better QR scanner package
+  permission_handler: ^11.3.1  # Updated to compatible version
+  http: ^1.1.0  # For API calls
+  shared_preferences: ^2.2.2  # For token storage
+  sqflite: ^2.3.0  # SQLite database for trip persistence
+  path: ^1.8.3  # For database path management
+  flutter_foreground_task: ^6.0.0+1  # For background trip tracking
+  geolocator: ^9.0.2  # For precise location tracking
+  stomp_dart_client: ^1.0.2  # STOMP client for RabbitMQ
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^2.0.0
+
+flutter:
+  uses-material-design: true
+  
+  assets:
+    - assets/
