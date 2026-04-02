@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 import 'auth_persistence_service.dart';
 
 class AuthService {
-  static const String _baseUrl = 'https://fleetmgt.slt.lk';
+  static const String _baseUrl = 'https://app.traknova.co.uk';
   static const String _tokenPath = '/ext/authentication/token';
   static const String _logoutPath = '/ext/drive-master/api/v1/security/logout';
   static const String _changePasswordPath = '/ext/drive-master/api/v1/security/change-password';

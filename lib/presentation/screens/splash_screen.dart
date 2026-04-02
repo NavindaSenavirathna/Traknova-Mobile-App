@@ -9,7 +9,7 @@ class SplashScreen extends StatefulWidget {
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen> 
+class _SplashScreenState extends State<SplashScreen>
     with TickerProviderStateMixin {
   late AnimationController _fadeController;
   late AnimationController _scaleController;
@@ -19,67 +19,45 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   void initState() {
     super.initState();
-    
-    // Initialize fade animation
+
     _fadeController = AnimationController(
       duration: const Duration(milliseconds: 1500),
       vsync: this,
     );
-    
-    // Initialize scale animation
+
     _scaleController = AnimationController(
       duration: const Duration(milliseconds: 2000),
       vsync: this,
     );
-    
-    _fadeAnimation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _fadeController,
-      curve: Curves.easeInOut,
-    ));
-    
-    _scaleAnimation = Tween<double>(
-      begin: 0.8,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _scaleController,
-      curve: Curves.easeOut,
-    ));
-    
-    // Start animations
-    _startAnimations();
-    
-    // Navigate to dashboard after delay
-    _navigateToDashboard();
-  }
-  
-  void _startAnimations() {
+
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut),
+    );
+
+    _scaleAnimation = Tween<double>(begin: 0.8, end: 1.0).animate(
+      CurvedAnimation(parent: _scaleController, curve: Curves.easeOut),
+    );
+
     _fadeController.forward();
     _scaleController.forward();
-  }
-  
-  void _navigateToDashboard() {
-    Timer(const Duration(seconds: 4), () { // Increased from 3 to 4 seconds for better visibility
+
+    Timer(const Duration(seconds: 4), () {
       if (mounted) {
         Navigator.of(context).pushReplacement(
           PageRouteBuilder(
-            pageBuilder: (context, animation, secondaryAnimation) => 
+            pageBuilder: (context, animation, secondaryAnimation) =>
                 const AuthWrapper(),
-            transitionDuration: const Duration(milliseconds: 1000), // Increased duration for smoother transition
-            transitionsBuilder: (context, animation, secondaryAnimation, child) {
-              return FadeTransition(
-                opacity: animation,
-                child: child,
-              );
+            transitionDuration: const Duration(milliseconds: 1000),
+            transitionsBuilder:
+                (context, animation, secondaryAnimation, child) {
+              return FadeTransition(opacity: animation, child: child);
             },
           ),
         );
       }
     });
   }
-  
+
   @override
   void dispose() {
     _fadeController.dispose();
@@ -90,108 +68,145 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white, // Clean white background for SLT branding
       body: Container(
         width: double.infinity,
         height: double.infinity,
-        child: Column(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFF0D3347), Color(0xFF0A2233)],
+          ),
+        ),
+        child: Stack(
           children: [
-            // Main content area - centered SLT logo
-            Expanded(
-              child: Column(
+            // Decorative radar circles
+            Positioned(
+              top: -80,
+              left: -80,
+              child: SizedBox(
+                width: 320,
+                height: 320,
+                child: CustomPaint(painter: _RadarPainter()),
+              ),
+            ),
+
+            // Bottom-right orange pin
+            const Positioned(
+              bottom: 28,
+              right: 28,
+              child: Icon(Icons.location_pin,
+                  color: Color(0xFFFF6B2B), size: 44),
+            ),
+
+            // Centred branding
+            Center(
+              child: AnimatedBuilder(
+                animation: _fadeController,
+                builder: (context, child) {
+                  return FadeTransition(
+                    opacity: _fadeAnimation,
+                    child: AnimatedBuilder(
+                      animation: _scaleController,
+                      builder: (context, child) {
+                        return Transform.scale(
+                          scale: _scaleAnimation.value,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              // Location pin icon
+                              const Icon(Icons.location_pin,
+                                  color: Color(0xFFFF6B2B), size: 64),
+                              const SizedBox(height: 12),
+
+                              // TRAKNOVA wordmark
+                              const Text(
+                                'TRAKNOVA',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 36,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 4,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+
+                              // Tagline
+                              const Text(
+                                'Your Location Tracking Partner.',
+                                style: TextStyle(
+                                  color: Colors.white60,
+                                  fontSize: 14,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+
+                              const SizedBox(height: 48),
+
+                              // Spinner
+                              const SizedBox(
+                                width: 28,
+                                height: 28,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.5,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                      Color(0xFF26C6DA)),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  );
+                },
+              ),
+            ),
+
+            // Footer label
+            const Positioned(
+              bottom: 36,
+              left: 0,
+              right: 0,
+              child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // SLT MOBITEL logo - centered and animated
-                  AnimatedBuilder(
-                    animation: _fadeController,
-                    builder: (context, child) {
-                      return FadeTransition(
-                        opacity: _fadeAnimation,
-                        child: AnimatedBuilder(
-                          animation: _scaleController,
-                          builder: (context, child) {
-                            return Transform.scale(
-                              scale: _scaleAnimation.value,
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  // Company logo
-                                  Container(
-                                    height: 60,
-                                    child: Image.asset(
-                                      'assets/logo.png',
-                                      height: 60,
-                                      fit: BoxFit.contain,
-                                      errorBuilder: (context, error, stackTrace) {
-                                        return Column(
-                                          crossAxisAlignment: CrossAxisAlignment.center,
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Container(
-                                              height: 40,
-                                              width: 40,
-                                              decoration: BoxDecoration(
-                                                color: const Color(0xFF00B4D8),
-                                                borderRadius: BorderRadius.circular(8),
-                                              ),
-                                              child: const Center(
-                                                child: Text(
-                                                  'SLT',
-                                                  style: TextStyle(
-                                                    color: Colors.white,
-                                                    fontWeight: FontWeight.bold,
-                                                    fontSize: 14,
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                            const SizedBox(height: 4),
-                                            const Text(
-                                              'The Connection',
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                color: Color(0xFF666666),
-                                                fontWeight: FontWeight.w400,
-                                              ),
-                                            ),
-                                          ],
-                                        );
-                                      },
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
-                      );
-                    },
-                  ),
-                  
-                  const SizedBox(height: 40), // Space between logo and loading
-                  
-                  // Loading spinner
-                  const SizedBox(
-                    width: 30,
-                    height: 30,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 3,
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        Color(0xFF00B4D8), // SLT blue color
-                      ),
+                  Icon(Icons.location_on_outlined,
+                      color: Colors.white24, size: 14),
+                  SizedBox(width: 5),
+                  Text(
+                    'TRAKNOVA',
+                    style: TextStyle(
+                      color: Colors.white24,
+                      fontSize: 12,
+                      letterSpacing: 2.5,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ],
               ),
-            ),
-            
-            // Bottom spacing
-            Container(
-              padding: const EdgeInsets.only(bottom: 60),
             ),
           ],
         ),
       ),
     );
   }
+}
+
+class _RadarPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white.withOpacity(0.04)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2;
+
+    final center = Offset(size.width * 0.3, size.height * 0.3);
+    for (final r in [60.0, 110.0, 160.0, 210.0, 260.0]) {
+      canvas.drawCircle(center, r, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

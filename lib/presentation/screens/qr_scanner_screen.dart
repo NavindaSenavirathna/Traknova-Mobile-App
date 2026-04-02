@@ -20,8 +20,6 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
   Barcode? result;
   bool _showStartTripDialog = false;
   final TextEditingController _odometerController = TextEditingController();
-  final TextEditingController _releaseNoteController = TextEditingController();
-  final TextEditingController _containerNumberController = TextEditingController();
   bool _hasLocationPermission = false;
   bool _hasCameraPermission = false;
   bool _isFlashOn = false;
@@ -39,10 +37,6 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
   void initState() {
     super.initState();
     _vehicleService = locator<VehicleService>();
-    
-    // Set hardcoded data for the new fields (temporary)
-    _releaseNoteController.text = 'RN-2025-001';
-    _containerNumberController.text = 'CONT-12345';
     
     _checkAllPermissions();
     _loadAvailableRoutes();
@@ -98,8 +92,6 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
   void dispose() {
     controller?.dispose();
     _odometerController.dispose();
-    _releaseNoteController.dispose();
-    _containerNumberController.dispose();
     super.dispose();
   }
 
@@ -1027,83 +1019,7 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 15),
-              
-              // Release Note Number field
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Release Note Number',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey,
-                    ),
-                  ),
-                  const SizedBox(height: 5),
-                  TextField(
-                    controller: _releaseNoteController,
-                    keyboardType: TextInputType.text,
-                    decoration: InputDecoration(
-                      hintText: 'Enter release note number',
-                      hintStyle: TextStyle(
-                        color: Colors.grey[400],
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: const BorderSide(color: Colors.cyan),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: const BorderSide(color: Colors.cyan, width: 2),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 15,
-                        vertical: 12,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 15),
-              
-              // Container Number field
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Container Number',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey,
-                    ),
-                  ),
-                  const SizedBox(height: 5),
-                  TextField(
-                    controller: _containerNumberController,
-                    keyboardType: TextInputType.text,
-                    decoration: InputDecoration(
-                      hintText: 'Enter container number',
-                      hintStyle: TextStyle(
-                        color: Colors.grey[400],
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: const BorderSide(color: Colors.cyan),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: const BorderSide(color: Colors.cyan, width: 2),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 15,
-                        vertical: 12,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20), // Reduced from 25
+              const SizedBox(height: 20),
               // Buttons
               Row(
                 children: [
@@ -1233,18 +1149,12 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
                           }
 
                           // No active trip found OR vehicle is only engaged, proceed with trip initiation API call
-                          final releaseNote = _releaseNoteController.text.trim().isNotEmpty ? _releaseNoteController.text.trim() : null;
-                          final containerNum = _containerNumberController.text.trim().isNotEmpty ? _containerNumberController.text.trim() : null;
-                          print('📝 UI Values - Release Note: "$releaseNote", Container: "$containerNum"');
-                          
                           final tripResponse = await _vehicleService.startTrip(
                             vehicleNumber: _vehicleResponse?.content?.vehicle.vehicleNo ?? result?.code ?? 'Unknown',
                             vehicleUuid: _vehicleResponse?.content?.vehicle.vehicleUuid ?? '',
-                            routeUuid: _selectedRoute ?? '',  // Use empty string if no route selected
+                            routeUuid: _selectedRoute ?? '',
                             odometerReading: _odometerController.text.trim(),
                             scheduleUuid: _vehicleResponse?.content?.schedules.first.uuid ?? '',
-                            releaseNoteNumber: releaseNote,
-                            containerNumber: containerNum,
                           );
 
                           // Close loading dialog

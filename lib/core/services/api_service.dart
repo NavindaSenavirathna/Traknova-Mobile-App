@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'auth_service.dart';
 
 class ApiService {
-  static const String baseUrl = 'https://fleetmgt.slt.lk';
+  static const String baseUrl = 'https://app.traknova.co.uk';
   final AuthService _authService;
 
   ApiService(this._authService);

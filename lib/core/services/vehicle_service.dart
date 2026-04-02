@@ -217,7 +217,6 @@ class VehicleService {
   }
 
   // Start trip after vehicle engagement with proper flow
-  // Updated API format includes: releaseNoteNumber, containerNumber, startOdoValue (instead of startOdometer)
   Future<TripStartResponse> startTrip({
     required String vehicleNumber,
     required String vehicleUuid,
@@ -226,8 +225,6 @@ class VehicleService {
     required String scheduleUuid,
     double? latitude,
     double? longitude,
-    String? releaseNoteNumber, // New optional field for release note number
-    String? containerNumber,   // New optional field for container number
   }) async {
     try {
       print('🚀 Starting trip flow for vehicle: $vehicleNumber');
@@ -310,8 +307,6 @@ class VehicleService {
         'scheduleId': scheduleUuid.isNotEmpty
             ? scheduleUuid
             : 'DMRS_68CBE78E38090', // Use default if empty
-        'releaseNoteNumber': releaseNoteNumber ?? 'RN-2025-0001', // User input or default release note number
-        'containerNumber': containerNumber ?? 'CONT-DEFAULT001', // User input or default container number
         'startLocation': {
           'latitude': startLocation['latitude'],
           'longitude': startLocation['longitude']
@@ -320,15 +315,11 @@ class VehicleService {
         'timestamp': DateTime.now().toUtc().toIso8601String(),
       };
 
-      print('🚀 Trip initiation request body (Updated API format): ${json.encode(requestBody)}');
-      print("meka thama body eka: ${requestBody}");
-      print('📋 Request Details:');
-      print('   - releaseNoteNumber: ${requestBody['releaseNoteNumber']}');
-      print('   - containerNumber: ${requestBody['containerNumber']}');
-      // Step 3: Call trip initiation API (Updated format with releaseNoteNumber, containerNumber, startOdoValue)
+      print('🚀 Trip initiation request body: ${json.encode(requestBody)}');
+      // Step 3: Call trip initiation API
       final AuthService authService = locator.get<AuthService>();
       final headers = await authService.getAuthHeaders();
-      final uri = Uri.parse('http://192.168.8.165:8000/ext/drive-master/api/v1/trip/initiate');
+      final uri = Uri.parse('https://app.traknova.co.uk/ext/drive-master/api/v1/trip/initiate');
       
       print('🌐 Trip Initiate API POST to: $uri');
       final response = await http.post(
@@ -350,57 +341,8 @@ class VehicleService {
       try {
         final responseJson = json.decode(response.body);
         print('✅ Response is valid JSON');
-        
-        // Log entire response structure
         print('\n📋 FULL RESPONSE STRUCTURE:');
         print(json.encode(responseJson));
-        
-        // Check what we sent vs what we got back
-        print('\n📤 WHAT WE SENT TO API:');
-        print('   - releaseNoteNumber: ${requestBody['releaseNoteNumber']}');
-        print('   - containerNumber: ${requestBody['containerNumber']}');
-        
-        print('\n📥 WHAT API RETURNED:');
-        
-        // Check top level
-        if (responseJson['releaseNoteNumber'] != null) {
-          print('   ✅ Found at TOP LEVEL:');
-          print('      - releaseNoteNumber: ${responseJson['releaseNoteNumber']}');
-        }
-        if (responseJson['containerNumber'] != null) {
-          print('      - containerNumber: ${responseJson['containerNumber']}');
-        }
-        
-        // Check result level
-        if (responseJson['result'] != null) {
-          final result = responseJson['result'];
-          print('   📦 Checking result object...');
-          
-          if (result['releaseNoteNumber'] != null || result['containerNumber'] != null) {
-            print('   ✅ Found in RESULT:');
-            print('      - releaseNoteNumber: ${result['releaseNoteNumber']}');
-            print('      - containerNumber: ${result['containerNumber']}');
-          }
-          
-          // Check result.content level
-          if (result['content'] != null) {
-            final content = result['content'];
-            print('   📦 Checking result.content object...');
-            
-            if (content['releaseNoteNumber'] != null || content['containerNumber'] != null) {
-              print('   ✅ Found in RESULT.CONTENT:');
-              print('      - releaseNoteNumber: ${content['releaseNoteNumber']}');
-              print('      - containerNumber: ${content['containerNumber']}');
-            } else {
-              print('   ❌ NOT FOUND in result.content');
-              print('   📋 Available fields in content: ${content.keys.toList()}');
-            }
-          } else {
-            print('   ⚠️ result.content is NULL');
-          }
-        } else {
-          print('   ⚠️ result object is NULL');
-        }
         
         // Final verdict
         print('\n🎯 VERDICT:');
@@ -486,13 +428,10 @@ class VehicleService {
                 '✅ Found existing engagement, marking trip as started with server ID and odometer');
             print(
                 '🎯 Calling markTripAsStarted with ID: ${existingTrip.id}, serverTripId: $serverTripId, odometer: ${double.tryParse(odometerReading) ?? 0.0}');
-            print('📋 Release Note: $releaseNoteNumber, Container: $containerNumber');
             await _tripPersistence.markTripAsStarted(
               existingTrip.id!,
               serverTripId: serverTripId,
               startOdometer: double.tryParse(odometerReading) ?? 0.0,
-              releaseNoteNumber: releaseNoteNumber,
-              containerNumber: containerNumber,
             );
             // Reload the updated trip
             existingTrip = await _tripPersistence.getActiveTrip();
@@ -501,16 +440,12 @@ class VehicleService {
           } else {
             // No engagement found, create complete trip record
             print('💾 Creating new trip record...');
-            print('📋 Release Note Number: $releaseNoteNumber');
-            print('📋 Container Number: $containerNumber');
             final activeTrip = ActiveTrip(
               serverTripId: serverTripId,
               vehicleNumber: vehicleNumber,
               vehicleUuid: vehicleUuid,
               routeUuid: routeUuid,
               scheduleUuid: scheduleUuid,
-              releaseNoteNumber: releaseNoteNumber,
-              containerNumber: containerNumber,
               engagementTimestamp:
                   DateTime.now(), // Both engagement and trip start at same time
               startTripTimestamp: DateTime.now(),
@@ -524,7 +459,6 @@ class VehicleService {
 
             final tripId = await _tripPersistence.saveActiveTrip(activeTrip);
             print('✅ Trip saved to local database with ID: $tripId');
-            print('✅ Saved with Release Note: ${activeTrip.releaseNoteNumber}, Container: ${activeTrip.containerNumber}');
             existingTrip = activeTrip.copyWith(id: tripId);
           }
 
@@ -594,7 +528,7 @@ class VehicleService {
               // Retry the trip initiation request
               final AuthService retryAuthService = locator.get<AuthService>();
               final retryHeaders = await retryAuthService.getAuthHeaders();
-              final retryUri = Uri.parse('http://192.168.8.165:8000/ext/drive-master/api/v1/trip/initiate');
+              final retryUri = Uri.parse('https://app.traknova.co.uk/ext/drive-master/api/v1/trip/initiate');
               
               print('🌐 Retry Trip Initiate API POST to: $retryUri');
               final retryResponse = await http.post(
@@ -647,8 +581,6 @@ class VehicleService {
                     vehicleUuid: vehicleUuid,
                     routeUuid: routeUuid,
                     scheduleUuid: scheduleUuid,
-                    releaseNoteNumber: releaseNoteNumber,
-                    containerNumber: containerNumber,
                     engagementTimestamp: DateTime.now(),
                     startTripTimestamp: DateTime.now(),
                     startOdometer: double.tryParse(odometerReading) ?? 0.0,
