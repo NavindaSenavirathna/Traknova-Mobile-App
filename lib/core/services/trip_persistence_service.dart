@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'package:sqflite/sqflite.dart';
 import 'package:geolocator/geolocator.dart';
 import '../database/trip_database.dart';
@@ -413,27 +414,54 @@ class TripPersistenceService {
         return;
       }
 
-      // Configure location settings for high accuracy
-      const LocationSettings locationSettings = LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 10, // Update every 10 meters
-      );
+      // Configure platform-specific location settings for best accuracy
+      // and battery efficiency during a trip.
+      final LocationSettings locationSettings;
+      if (Platform.isAndroid) {
+        locationSettings = AndroidSettings(
+          accuracy: LocationAccuracy.high,
+          distanceFilter: 10, // save a point only after 10 m of movement
+          forceLocationManager: false,
+          intervalDuration: const Duration(seconds: 5),
+          foregroundNotificationConfig: const ForegroundNotificationConfig(
+            notificationText: 'Recording trip route…',
+            notificationTitle: 'DriveMaster – Trip Active',
+            enableWakeLock: true,
+          ),
+        );
+      } else if (Platform.isIOS || Platform.isMacOS) {
+        locationSettings = AppleSettings(
+          accuracy: LocationAccuracy.high,
+          activityType: ActivityType.automotiveNavigation,
+          distanceFilter: 10,
+          pauseLocationUpdatesAutomatically: false,
+          showBackgroundLocationIndicator: true,
+        );
+      } else {
+        locationSettings = const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          distanceFilter: 10,
+        );
+      }
 
       // Start location stream
       _positionStream = Geolocator.getPositionStream(
         locationSettings: locationSettings,
       ).listen((Position position) async {
+        // Discard low-accuracy fixes (e.g. first cell-tower-based position).
+        if (position.accuracy > 60.0) return;
+
         // Save location to database
         final location = TripLocation(
           tripId: tripId,
           latitude: position.latitude,
           longitude: position.longitude,
           timestamp: DateTime.now(),
-          speed: position.speed,
+          speed: position.speed < 0 ? 0 : position.speed,
           heading: position.heading,
           accuracy: position.accuracy,
         );
-        
+
         await saveLocation(location);
       });
 

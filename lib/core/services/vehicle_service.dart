@@ -5,6 +5,8 @@ import 'package:drive_master_app/core/services/auth_service.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'api_service.dart';
+import 'live_location_service.dart';
+import 'tcp_tracker_service.dart';
 import 'trip_persistence_service.dart';
 import 'trip_tracking_service.dart';
 import 'amq_service.dart';
@@ -479,9 +481,14 @@ class VehicleService {
               print('⚠️ Failed to start background tracking service');
             }
 
-            // Start foreground drop point timer
+            // Start foreground drop point timer and pause LiveLocationService
+            // to prevent duplicate POSTs to the same drop-point endpoint.
             _startForegroundDropPointTimer();
+            LiveLocationService().setTripActive(true);
+            // Start TCP tracker — phone now feeds into the rr_new_git pipeline.
+            TcpTrackerService().start();
             print('📍 Foreground drop point timer started (5-second interval)');
+            print('🔌 TCP tracker started (virtual IMEI: ${TcpTrackerService().deviceId})');
           }
         } else {
           print(
@@ -607,7 +614,11 @@ class VehicleService {
 
                   // Start foreground drop point timer for retry case
                   _startForegroundDropPointTimer();
+                  LiveLocationService().setTripActive(true);
+                  // Start TCP tracker for retry trip.
+                  TcpTrackerService().start();
                   print('📍 Foreground drop point timer started (5-second interval)');
+                  print('🔌 TCP tracker started (virtual IMEI: ${TcpTrackerService().deviceId})');
 
                   return retryTripResponse;
                 } else {
@@ -795,7 +806,9 @@ class VehicleService {
       return {
         'latitude': position.latitude,
         'longitude': position.longitude,
-        'speed': position.speed, // Speed in meters per second from GPS
+        'speed': position.speed,    // Speed in m/s from GPS
+        'accuracy': position.accuracy, // metres – real GPS accuracy
+        'bearing': position.heading,   // degrees – real GPS heading
       };
     } catch (e) {
       print('❌ Error getting current location: $e');
@@ -1330,8 +1343,12 @@ class VehicleService {
       }
       print('🗺️ ===== ROUTE PATH PROCESSING COMPLETED =====');
 
-      // Stop foreground drop point timer
+      // Stop foreground drop point timer and resume LiveLocationService sends.
       _stopForegroundDropPointTimer();
+      LiveLocationService().setTripActive(false);
+      // Stop TCP tracker — trip has ended.
+      await TcpTrackerService().stop();
+      print('🔌 TCP tracker stopped');
 
       // Disconnect AMQ connection
       await _disconnectAmqConnection();
@@ -1511,8 +1528,12 @@ class VehicleService {
           print('⚠️ Could not parse response JSON: $parseError');
         }
 
-        // Stop foreground drop point timer
+        // Stop foreground drop point timer and resume LiveLocationService sends.
         _stopForegroundDropPointTimer();
+        LiveLocationService().setTripActive(false);
+        // Stop TCP tracker — vehicle has been released.
+        await TcpTrackerService().stop();
+        print('🔌 TCP tracker stopped on vehicle release');
 
         // Disconnect AMQ connection before clearing data
         await _disconnectAmqConnection();
@@ -1676,10 +1697,10 @@ class VehicleService {
         'dropAt': dropAt,
         'latitude': currentLocation['latitude']!,
         'longitude': currentLocation['longitude']!,
-        'speed': currentLocation['speed'] ?? 0.0, // Use actual GPS speed from device
-        'altitude': 0.0, // Optional - set to 0.0 as default
-        'accuracy': 10.0, // Optional - set to 10.0 as default
-        'bearing': 0.0, // Optional - set to 0.0 as default
+        'speed': currentLocation['speed'] ?? 0.0,
+        'altitude': 0.0,
+        'accuracy': currentLocation['accuracy'] ?? 10.0, // real GPS accuracy
+        'bearing': currentLocation['bearing'] ?? 0.0,    // real GPS heading
       };
 
       print('📤 Drop point API request body:');
@@ -1805,10 +1826,10 @@ class VehicleService {
         'dropAt': dropAt,
         'latitude': currentLocation['latitude']!,
         'longitude': currentLocation['longitude']!,
-        'speed': currentLocation['speed'] ?? 0.0, // Use actual GPS speed from device
-        'altitude': 0.0, // Optional - set to 0.0 as default
-        'accuracy': 10.0, // Optional - set to 10.0 as default
-        'bearing': 0.0, // Optional - set to 0.0 as default
+        'speed': currentLocation['speed'] ?? 0.0,
+        'altitude': 0.0,
+        'accuracy': currentLocation['accuracy'] ?? 10.0, // real GPS accuracy
+        'bearing': currentLocation['bearing'] ?? 0.0,    // real GPS heading
       };
 
       print('📤 [DROP POINT API] Request details:');

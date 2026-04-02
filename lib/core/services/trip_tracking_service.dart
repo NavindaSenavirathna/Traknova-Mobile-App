@@ -110,37 +110,34 @@ class TripTrackingService {
     }
   }
 
-  // Start periodic notification updates and sync
+  // Starts a single 5-second timer that handles BOTH notification updates
+  // and API sync – previously two separate timers were doing the same tick.
   void _startNotificationUpdates(ActiveTrip trip) {
     _updateTimer?.cancel();
+    _syncTimer?.cancel(); // ensure no old sync timer survives a restart
+
     _updateTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
       if (!_isServiceRunning || !await FlutterForegroundTask.isRunningService) {
         timer.cancel();
         return;
       }
-      
+
+      // 1. Update foreground notification
       final elapsed = trip.elapsedTimeFromEngagement;
       await FlutterForegroundTask.updateService(
         notificationTitle: 'DriveMaster - Trip Active',
         notificationText: 'Vehicle: ${trip.vehicleNumber} • ${_formatElapsedTime(elapsed)}',
       );
-    });
-    
-    // Start sync timer for API calls (separate from notification updates)
-    _startSyncTimer();
-  }
-  
-  // Start periodic sync timer (runs in main isolate)
-  void _startSyncTimer() {
-    _syncTimer?.cancel();
-    _syncTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
-      if (!_isServiceRunning || !await FlutterForegroundTask.isRunningService) {
-        timer.cancel();
-        return;
-      }
-      
+
+      // 2. Sync DB locations to server (previously a separate _syncTimer)
       await _performSync();
     });
+  }
+
+  // _startSyncTimer is kept for API compatibility but is now a no-op because
+  // the sync runs inside the single _updateTimer tick above.
+  void _startSyncTimer() {
+    // Intentionally empty – sync is driven by _startNotificationUpdates().
   }
   
   // Perform sync operation in main isolate

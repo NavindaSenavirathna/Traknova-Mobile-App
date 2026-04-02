@@ -1,15 +1,16 @@
 ﻿// screens/dashboard_screen.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../features/auth/auth_view_model.dart';
-import '../../core/services/auth_service.dart';
+import '../../core/services/api_service.dart';
 import '../../core/services/locator.dart';
 import '../../core/services/live_location_service.dart';
-import '../../main.dart';
 import 'login_screen.dart';
 import 'userprofile_screen.dart';
 import 'filinginfo_screen.dart';
 import 'notification_screen.dart';
+import '../../features/tracking/live_tracking_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -91,7 +92,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         _statusMessage = 'Requesting permissions...';
       });
 
-      final started = await _locationService.start(intervalSeconds: 5);
+      final started = await _locationService.start();
 
       if (mounted) {
         setState(() {
@@ -275,6 +276,32 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
+  /// Share the current location on WhatsApp as a Google Maps link.
+  Future<void> _shareOnWhatsApp() async {
+    if (_currentLocation == null) return;
+
+    final lat = _currentLocation!.latitude;
+    final lng = _currentLocation!.longitude;
+    final mapsLink = 'https://www.google.com/maps?q=$lat,$lng';
+    final message = Uri.encodeComponent(
+      'My current live location:\n$mapsLink',
+    );
+    final whatsappUrl = Uri.parse('https://wa.me/?text=$message');
+
+    try {
+      await launchUrl(whatsappUrl, mode: LaunchMode.externalApplication);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not open WhatsApp: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   String _fmt(double v, {int decimals = 6}) => v.toStringAsFixed(decimals);
 
   String _fmtTime(DateTime dt) =>
@@ -316,7 +343,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                               Text('MASTER', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
                             ]),
                             GestureDetector(
-                              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationScreen())),
+                              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => WebSocketScreen())),
                               child: Container(
                                 width: 36, height: 36,
                                 decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(18)),
@@ -466,6 +493,90 @@ class _DashboardScreenState extends State<DashboardScreen>
                                     ),
                                   ],
                                 ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      // Live Tracking Map button
+                      Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.symmetric(horizontal: 20),
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const LiveTrackingScreen(),
+                            ),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF1E3A5F),
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(30),
+                              side: const BorderSide(color: Color(0xFF00C896), width: 1.5),
+                            ),
+                            elevation: 4,
+                          ),
+                          child: const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.map_outlined, color: Color(0xFF00C896), size: 22),
+                              SizedBox(width: 10),
+                              Text(
+                                'Live Tracking Map',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  color: Color(0xFF00C896),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      // Share on WhatsApp button
+                      Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.symmetric(horizontal: 20),
+                        child: ElevatedButton(
+                          onPressed: _currentLocation == null ? null : _shareOnWhatsApp,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF25D366), // WhatsApp green
+                            disabledBackgroundColor: Colors.grey[700],
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(30),
+                            ),
+                            elevation: 6,
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Image.asset(
+                                'assets/whatsapp_icon.png',
+                                width: 22,
+                                height: 22,
+                                errorBuilder: (_, __, ___) => const Icon(
+                                  Icons.share,
+                                  color: Colors.white,
+                                  size: 22,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              const Text(
+                                'Share Location on WhatsApp',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
 
