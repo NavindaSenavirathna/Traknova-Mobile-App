@@ -57,7 +57,9 @@ class AmqService {
           stompConnectHeaders: {
             'login': config.username,
             'passcode': config.password,
-            'host': config.host,
+            // 'host' in STOMP CONNECT = RabbitMQ virtual host, NOT the server IP.
+            // Sending the server IP here causes: "Virtual host '<IP>' access denied".
+            'host': config.virtualHost,
           },
         ),
       );

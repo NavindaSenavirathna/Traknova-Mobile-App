@@ -1,0 +1,29 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Get Flutter Dependencies",
+			"type": "shell",
+			"command": "cd /Users/janidu/Documents/tracknova_mobile_app/Traknova-Mobile-App && flutter pub get"
+		},
+		{
+			"label": "Generate App Icons",
+			"type": "shell",
+			"command": "cd /Users/janidu/Documents/tracknova_mobile_app/Traknova-Mobile-App && flutter pub get && dart run flutter_launcher_icons",
+			"isBackground": false
+		},
+		{
+			"label": "Build TrakNova APK",
+			"type": "shell",
+			"command": "cd /Users/janidu/Documents/tracknova_mobile_app/Traknova-Mobile-App && flutter pub get && dart run flutter_launcher_icons && flutter build apk --release && cp build/app/outputs/flutter-apk/app-release.apk 'Traknova mobile app.apk' && echo '✅ APK built: Traknova mobile app.apk'",
+			"isBackground": false
+		},
+		{
+			"label": "flutter pub get",
+			"type": "shell",
+			"command": "flutter pub get",
+			"isBackground": false,
+			"problemMatcher": []
+		}
+	]
+}

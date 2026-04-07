@@ -17,12 +17,17 @@ class TrackerServerConfig {
   /// Exchange name used by rr_new_git AMGLiveDataProducer (fanout).
   final String exchange;
 
+  /// RabbitMQ virtual host — NOT the server hostname.
+  /// Default is '/' which is RabbitMQ's built-in default vhost.
+  final String virtualHost;
+
   const TrackerServerConfig({
     required this.host,
     required this.port,
     required this.username,
     required this.password,
     this.exchange = 'aionliveexchange',
+    this.virtualHost = '/',
   });
 }
 
@@ -85,7 +90,12 @@ class LiveTrackingService {
   final StreamController<TrackingState> _controller =
       StreamController<TrackingState>.broadcast();
 
+  /// Emits STOMP/WebSocket error messages so the UI can react.
+  final StreamController<String> _errorController =
+      StreamController<String>.broadcast();
+
   Stream<TrackingState> get stateStream => _controller.stream;
+  Stream<String>        get errorStream => _errorController.stream;
   bool get isConnected => _isConnected;
   bool get isRunning   => _isRunning;
 
@@ -120,21 +130,28 @@ class LiveTrackingService {
         onWebSocketError: (e) {
           print('❌ [LiveTrackingService] WebSocket error: $e');
           _isConnected = false;
+          _errorController.add('WebSocket error: $e');
         },
         onStompError: (StompFrame f) {
           print('❌ [LiveTrackingService] STOMP error: ${f.body}');
+          _errorController.add(f.body ?? 'Unknown STOMP error');
         },
         onDisconnect: (_) {
           print('🔌 [LiveTrackingService] Disconnected');
           _isConnected = false;
         },
+        // Disable auto-reconnect — auth errors would cause an endless retry loop.
+        // The UI layer handles reconnection after the user corrects credentials.
+        reconnectDelay: Duration.zero,
         heartbeatIncoming: const Duration(seconds: 20),
         heartbeatOutgoing: const Duration(seconds: 20),
         connectionTimeout: const Duration(seconds: 30),
         stompConnectHeaders: {
           'login'   : config.username,
           'passcode': config.password,
-          'host'    : config.host,
+          // 'host' in STOMP CONNECT = RabbitMQ virtual host, NOT the server IP.
+          // Sending the server IP here causes: "Virtual host '<IP>' access denied".
+          'host'    : config.virtualHost,
         },
       ),
     );

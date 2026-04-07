@@ -33,7 +33,7 @@
     </queries>
     
     <application
-        android:label="drive_master_app"
+        android:label="TrakNova"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

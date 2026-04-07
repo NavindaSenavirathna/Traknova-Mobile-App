@@ -7,6 +7,10 @@ class AmqConfig {
   final String topic;
   final bool isDurable;
 
+  /// RabbitMQ virtual host — NOT the server hostname.
+  /// Default is '/' which is RabbitMQ's built-in default vhost.
+  final String virtualHost;
+
   AmqConfig({
     required this.host,
     required this.port,
@@ -15,6 +19,7 @@ class AmqConfig {
     required this.exchange,
     required this.topic,
     required this.isDurable,
+    this.virtualHost = '/',
   });
 
   factory AmqConfig.fromJson(Map<String, dynamic> json) {
@@ -26,12 +31,13 @@ class AmqConfig {
       exchange: json['exchange'] ?? 'amq.topic',
       topic: json['topic'] ?? '',
       isDurable: json['isDurable'] ?? true,
+      virtualHost: json['virtualHost'] ?? json['vhost'] ?? '/',
     );
   }
 
   @override
   String toString() {
-    return 'AmqConfig{host: $host, port: $port, username: $username, exchange: $exchange, topic: $topic}';
+    return 'AmqConfig{host: $host, port: $port, username: $username, exchange: $exchange, topic: $topic, virtualHost: $virtualHost}';
   }
 }
 

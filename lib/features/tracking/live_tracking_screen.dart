@@ -1,279 +1,253 @@
-import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../../core/models/traknova_device.dart';
 import '../../core/models/tracker_point.dart';
-import '../../core/services/live_tracking_service.dart';
-import '../../core/services/live_location_service.dart';
 import '../../core/viewmodels/live_tracking_viewmodel.dart';
+import '../../core/services/live_location_service.dart';
 import '../../core/services/locator.dart';
 import '../../core/services/api_service.dart';
+import '../../core/services/auth_service.dart';
 
-// ─── Entry point ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+//  Live Tracking Screen — Mobile-First Design
+// ═══════════════════════════════════════════════════════════════════════════════
 
 class LiveTrackingScreen extends StatefulWidget {
-  /// Optional: pre-supply server config (e.g. from the trip API's liveAmq).
-  final TrackerServerConfig? initialConfig;
-
-  const LiveTrackingScreen({super.key, this.initialConfig});
-
+  const LiveTrackingScreen({super.key});
   @override
   State<LiveTrackingScreen> createState() => _LiveTrackingScreenState();
 }
 
-// ─── State ────────────────────────────────────────────────────────────────────
-
 class _LiveTrackingScreenState extends State<LiveTrackingScreen>
     with TickerProviderStateMixin {
+  // ── Constants ───────────────────────────────────────────────────────────
+  static const _dark       = Color(0xFF0F1923);
+  static const _darkCard   = Color(0xFF162636);
+  static const _accent     = Color(0xFF00C896);
+  static const _accentDark = Color(0xFF00A87A);
 
-  // ── Map ──────────────────────────────────────────────────────────────────
-  final MapController _mapController = MapController();
+  // ── Map ─────────────────────────────────────────────────────────────────
+  final MapController _mapCtrl = MapController();
+  double _zoom = 6.0;
   bool _followPhone = true;
-  double _currentZoom = 15.0;
   LatLng? _lastCentered;
 
-  // ── ViewModel ─────────────────────────────────────────────────────────────
-  final LiveTrackingViewModel _vm = LiveTrackingViewModel();
+  // ── ViewModel ───────────────────────────────────────────────────────────
+  late final LiveTrackingViewModel _vm;
 
-  // ── Pulsing animation for phone marker ───────────────────────────────────
+  // ── Animations ──────────────────────────────────────────────────────────
   late AnimationController _pulseCtrl;
-  late Animation<double> _pulseAnim;
+  late Animation<double>   _pulse;
+  late AnimationController _dotCtrl;
+  late Animation<double>   _dot;
 
-  // ── Selected tracker info sheet ──────────────────────────────────────────
-  TrackerPoint? _infoTracker;
+  // ── Bottom sheet ────────────────────────────────────────────────────────
+  final DraggableScrollableController _sheetCtrl =
+      DraggableScrollableController();
+  bool _sheetExpanded = false;
 
-  // ── Config ────────────────────────────────────────────────────────────────
-  final TextEditingController _hostCtrl   = TextEditingController(text: '68.183.35.63');
-  final TextEditingController _portCtrl   = TextEditingController(text: '15674');
-  final TextEditingController _userCtrl   = TextEditingController(text: 'guest');
-  final TextEditingController _passCtrl   = TextEditingController(text: 'guest');
-  bool _configSaved = false;
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Lifecycle
+  // ═══════════════════════════════════════════════════════════════════════
 
   @override
   void initState() {
     super.initState();
+    _vm = LiveTrackingViewModel(locator<AuthService>());
 
+    // Pulse animation for phone marker
     _pulseCtrl = AnimationController(
       vsync: this, duration: const Duration(seconds: 2),
     )..repeat(reverse: true);
-    _pulseAnim = Tween<double>(begin: 0.4, end: 1.0).animate(
+    _pulse = Tween(begin: 0.35, end: 1.0).animate(
       CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut),
     );
 
-    _vm.addListener(_onVmUpdate);
+    // Pulsing dot for connection status
+    _dotCtrl = AnimationController(
+      vsync: this, duration: const Duration(milliseconds: 800),
+    )..repeat(reverse: true);
+    _dot = Tween(begin: 0.3, end: 1.0).animate(_dotCtrl);
 
-    // Wire phone GPS into the LiveLocationService
+    _vm.addListener(_onVmChange);
+
+    // Wire GPS service
     LiveLocationService().setApiService(locator<ApiService>());
 
-    if (widget.initialConfig != null) {
-      _applyConfig(widget.initialConfig!);
-    } else {
-      _loadSavedConfig();
-    }
+    // Auto-connect: load devices + connect MQTT — no popup needed
+    _vm.initialize();
   }
 
   @override
   void dispose() {
     _pulseCtrl.dispose();
-    _vm.removeListener(_onVmUpdate);
+    _dotCtrl.dispose();
+    _vm.removeListener(_onVmChange);
     _vm.dispose();
-    _hostCtrl.dispose();
-    _portCtrl.dispose();
-    _userCtrl.dispose();
-    _passCtrl.dispose();
     super.dispose();
   }
 
-  // ── Config helpers ────────────────────────────────────────────────────────
-
-  Future<void> _loadSavedConfig() async {
-    final prefs = await SharedPreferences.getInstance();
-    final host  = prefs.getString('lt_host');
-    if (host != null) {
-      final cfg = TrackerServerConfig(
-        host    : host,
-        port    : prefs.getInt('lt_port')     ?? 15674,
-        username: prefs.getString('lt_user')  ?? 'guest',
-        password: prefs.getString('lt_pass')  ?? 'guest',
-      );
-      _hostCtrl.text = cfg.host;
-      _portCtrl.text = cfg.port.toString();
-      _userCtrl.text = cfg.username;
-      _passCtrl.text = cfg.password;
-      _applyConfig(cfg);
-    } else {
-      // Show config dialog on first open
-      WidgetsBinding.instance.addPostFrameCallback((_) => _showConfigDialog());
-    }
-  }
-
-  Future<void> _saveConfig(TrackerServerConfig cfg) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('lt_host', cfg.host);
-    await prefs.setInt   ('lt_port', cfg.port);
-    await prefs.setString('lt_user', cfg.username);
-    await prefs.setString('lt_pass', cfg.password);
-  }
-
-  void _applyConfig(TrackerServerConfig cfg) {
-    _configSaved = true;
-    // Start phone GPS
-    LiveLocationService().start();
-    // Connect to the tracker exchange
-    _vm.connect(cfg);
-  }
-
-  // ── ViewModel listener ────────────────────────────────────────────────────
-
-  void _onVmUpdate() {
+  void _onVmChange() {
     if (!mounted) return;
     setState(() {});
 
-    // Auto-follow phone
+    // Auto-center on phone while _followPhone is true
     if (_followPhone && _vm.phonePosition != null) {
       final pos = _vm.phonePosition!.position;
       if (_lastCentered == null ||
           const Distance().as(LengthUnit.Meter, _lastCentered!, pos) > 10) {
         _lastCentered = pos;
-        try {
-          _mapController.move(pos, _currentZoom);
-          _lastCentered = pos;
-        } catch (_) {}
+        try { _mapCtrl.move(pos, _zoom); } catch (_) {}
       }
     }
   }
 
-  // ── Map interaction ───────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Map interaction
+  // ═══════════════════════════════════════════════════════════════════════
 
-  void _onMapEvent(MapEvent event) {
-    if (event is MapEventMove && event.source != MapEventSource.mapController) {
-      // User dragged — stop following
-      setState(() => _followPhone = false);
+  void _onMapEvent(MapEvent ev) {
+    if (ev is MapEventMove && ev.source != MapEventSource.mapController) {
+      _followPhone = false;
     }
-    if (event is MapEventScrollWheelZoom || event is MapEventDoubleTapZoom) {
-      _currentZoom = _mapController.camera.zoom;
-    }
+    if (ev is MapEventMoveEnd) _zoom = _mapCtrl.camera.zoom;
   }
 
   void _recenter() {
     final pos = _vm.focusPosition;
     if (pos != null) {
-      _mapController.move(pos, _currentZoom);
-      _lastCentered = _mapController.camera.center;
+      _mapCtrl.move(pos, _zoom);
+      _lastCentered = _mapCtrl.camera.center;
     }
     setState(() => _followPhone = true);
   }
 
-  // ── Build ─────────────────────────────────────────────────────────────────
+  void _focusDevice(TraknovaDevice d) {
+    if (!d.hasPosition) return;
+    _vm.selectDevice(d);
+    setState(() => _followPhone = false);
+    _mapCtrl.move(
+      LatLng(d.currentLatitude!, d.currentLongitude!),
+      math.max(_zoom, 15.0),
+    );
+    // Collapse sheet so map is visible
+    _sheetCtrl.animateTo(0.08,
+        duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Build
+  // ═══════════════════════════════════════════════════════════════════════
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0F1923),
+      backgroundColor: _dark,
       body: Stack(
         children: [
+          // ── Map (full screen) ─────────────────────────────────────────
           _buildMap(),
-          _buildTopBar(),
-          if (_vm.trackers.isNotEmpty) _buildTrackerList(),
-          _buildBottomHud(),
-          if (_infoTracker != null) _buildInfoSheet(_infoTracker!),
+
+          // ── Floating top bar ──────────────────────────────────────────
+          _buildTopBar(context),
+
+          // ── FABs ──────────────────────────────────────────────────────
           _buildFabs(),
+
+          // ── Selected device card ──────────────────────────────────────
+          if (_vm.selectedDevice != null)
+            _buildSelectedCard(_vm.selectedDevice!),
+
+          // ── Draggable bottom sheet ────────────────────────────────────
+          _buildBottomSheet(),
         ],
       ),
     );
   }
 
-  // ── Map ───────────────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Map
+  // ═══════════════════════════════════════════════════════════════════════
 
   Widget _buildMap() {
-    final phone    = _vm.phonePosition;
-    final trackers = _vm.trackers;
+    final phone   = _vm.phonePosition;
+    final devices = _vm.filteredDevices.where((d) => d.hasPosition).toList();
 
     return FlutterMap(
-      mapController: _mapController,
+      mapController: _mapCtrl,
       options: MapOptions(
-        initialCenter: phone?.position ?? const LatLng(51.5074, -0.1278),
-        initialZoom  : _currentZoom,
-        maxZoom: 19,
-        minZoom: 3,
+        initialCenter: phone?.position ?? const LatLng(53.0, -2.0),
+        initialZoom: _zoom,
+        maxZoom: 19, minZoom: 3,
         onMapEvent: _onMapEvent,
       ),
       children: [
-        // OSM tile layer
         TileLayer(
           urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
           userAgentPackageName: 'com.traknova.drivemaster',
           maxZoom: 19,
         ),
 
-        // Phone breadcrumb trail
+        // Phone trail
         if (_vm.phonePath.length > 1)
-          PolylineLayer(
-            polylines: [
-              Polyline(
-                points      : _vm.phonePath,
-                strokeWidth : 3.0,
-                color       : const Color(0xFF00C896).withOpacity(0.7),
-              ),
-            ],
-          ),
+          PolylineLayer(polylines: [
+            Polyline(
+              points: _vm.phonePath,
+              strokeWidth: 3.5,
+              color: _accent.withOpacity(0.55),
+            ),
+          ]),
 
-        // Tracker position markers
-        MarkerLayer(
-          markers: trackers.map((t) => _trackerMarker(t)).toList(),
-        ),
+        // Device markers
+        MarkerLayer(markers: devices.map(_deviceMarker).toList()),
 
         // Phone accuracy circle
         if (phone != null && (phone.accuracy ?? 0) > 0)
-          CircleLayer(
-            circles: [
-              CircleMarker(
-                point  : phone.position,
-                radius : phone.accuracy!,
-                useRadiusInMeter: true,
-                color  : Colors.blue.withOpacity(0.15),
-                borderColor: Colors.blue.withOpacity(0.4),
-                borderStrokeWidth: 1.5,
-              ),
-            ],
-          ),
+          CircleLayer(circles: [
+            CircleMarker(
+              point: phone.position,
+              radius: phone.accuracy!,
+              useRadiusInMeter: true,
+              color: Colors.blue.withOpacity(0.10),
+              borderColor: Colors.blue.withOpacity(0.25),
+              borderStrokeWidth: 1,
+            ),
+          ]),
 
-        // Phone position marker
-        if (phone != null)
-          MarkerLayer(
-            markers: [_phoneMarker(phone)],
-          ),
+        // Phone marker
+        if (phone != null) MarkerLayer(markers: [_phoneMarker(phone)]),
       ],
     );
   }
 
+  // ── Phone marker ────────────────────────────────────────────────────────
+
   Marker _phoneMarker(TrackerPoint p) => Marker(
-    point : p.position,
-    width : 48,
-    height: 48,
-    child : AnimatedBuilder(
-      animation: _pulseAnim,
+    point: p.position,
+    width: 52, height: 52,
+    child: AnimatedBuilder(
+      animation: _pulse,
       builder: (_, __) => Stack(
         alignment: Alignment.center,
         children: [
-          // Pulsing ring
           Container(
-            width : 40 * _pulseAnim.value,
-            height: 40 * _pulseAnim.value,
+            width: 44 * _pulse.value,
+            height: 44 * _pulse.value,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: Colors.blue.withOpacity(0.2 * (1 - _pulseAnim.value + 0.4)),
+              color: Colors.blue.withOpacity(0.15 * (1.2 - _pulse.value)),
             ),
           ),
-          // Arrow (rotates with bearing)
-          Transform.rotate(
-            angle: p.bearing * math.pi / 180,
-            child: const Icon(
-              Icons.navigation,
+          Container(
+            width: 20, height: 20,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
               color: Colors.blue,
-              size: 28,
+              border: Border.all(color: Colors.white, width: 2.5),
+              boxShadow: [BoxShadow(color: Colors.blue.withOpacity(0.4), blurRadius: 8)],
             ),
           ),
         ],
@@ -281,600 +255,843 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen>
     ),
   );
 
-  Marker _trackerMarker(TrackerPoint t) => Marker(
-    point : t.position,
-    width : 56,
-    height: 56,
-    child : GestureDetector(
-      onTap: () => setState(() {
-        _infoTracker = (_infoTracker?.deviceId == t.deviceId) ? null : t;
-        if (_infoTracker != null) {
-          _followPhone = false;
-          _mapController.move(t.position, math.max(_currentZoom, 15.0));
-        }
-      }),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: _trackerColor(t.protocol),
-              border: Border.all(color: Colors.white, width: 2),
-              boxShadow: [
-                BoxShadow(
-                  color: _trackerColor(t.protocol).withOpacity(0.5),
-                  blurRadius: 8,
+  // ── Device marker ───────────────────────────────────────────────────────
+
+  Marker _deviceMarker(TraknovaDevice d) {
+    final selected = _vm.selectedDevice?.imei == d.imei;
+    final clr = _statusColor(d);
+
+    return Marker(
+      point: LatLng(d.currentLatitude!, d.currentLongitude!),
+      width: 56, height: 56,
+      child: GestureDetector(
+        onTap: () => selected ? _vm.selectDevice(null) : _focusDevice(d),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Icon
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 250),
+              width: selected ? 38 : 32,
+              height: selected ? 38 : 32,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: clr,
+                border: Border.all(color: Colors.white, width: selected ? 3 : 2),
+                boxShadow: [BoxShadow(color: clr.withOpacity(0.5), blurRadius: 10)],
+              ),
+              child: Transform.rotate(
+                angle: d.currentDirection * math.pi / 180,
+                child: Icon(
+                  d.currentSpeed > 0 ? Icons.navigation_rounded : Icons.local_shipping_rounded,
+                  color: Colors.white,
+                  size: selected ? 18 : 15,
                 ),
-              ],
+              ),
             ),
-            child: Icon(
-              t.protocol == 'mobile' ? Icons.smartphone : Icons.directions_car,
-              color: Colors.white,
-              size: 18,
+            // Speed tag
+            Container(
+              margin: const EdgeInsets.only(top: 2),
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              decoration: BoxDecoration(
+                color: _dark.withOpacity(0.85),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: clr.withOpacity(0.4), width: 0.5),
+              ),
+              child: Text(
+                '${d.currentSpeed.toStringAsFixed(0)} km/h',
+                style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w600),
+              ),
             ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-            decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.75),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Text(
-              '${t.speed.toStringAsFixed(0)} km/h',
-              style: const TextStyle(color: Colors.white, fontSize: 9),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
-    ),
-  );
-
-  Color _trackerColor(String protocol) {
-    switch (protocol.toLowerCase()) {
-      case 'mobile': return Colors.orange;
-      case 'h02':    return Colors.green;
-      default:       return const Color(0xFF2979FF);
-    }
+    );
   }
 
-  // ── Top bar ───────────────────────────────────────────────────────────────
+  Color _statusColor(TraknovaDevice d) {
+    if (!d.isOnline) return Colors.grey;
+    if (d.currentSpeed >= d.speedLimit) return Colors.red;
+    if (d.currentSpeed > 0) return const Color(0xFF4CAF50);
+    if (d.ignitionOn == false) return const Color(0xFF2196F3);
+    return Colors.orange;
+  }
 
-  Widget _buildTopBar() => Positioned(
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Top bar (floating, glass-like)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  Widget _buildTopBar(BuildContext ctx) => Positioned(
     top: 0, left: 0, right: 0,
     child: SafeArea(
+      bottom: false,
       child: Container(
-        margin: const EdgeInsets.all(12),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        margin: const EdgeInsets.fromLTRB(14, 6, 14, 0),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
         decoration: BoxDecoration(
-          color: const Color(0xEE0F1923),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white12),
+          color: _dark.withOpacity(0.92),
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 12, offset: const Offset(0, 4))],
+          border: Border.all(color: Colors.white.withOpacity(0.06)),
         ),
         child: Row(
           children: [
+            // Back
             IconButton(
-              icon: const Icon(Icons.arrow_back, color: Colors.white, size: 20),
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
-              onPressed: () => Navigator.of(context).maybePop(),
+              icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 18),
+              onPressed: () => Navigator.of(ctx).maybePop(),
+              splashRadius: 20,
             ),
-            const SizedBox(width: 8),
-            const Text(
-              'Live Tracking',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
+            // Title + status
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Live Tracking',
+                    style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700)),
+                Row(
+                  children: [
+                    AnimatedBuilder(
+                      animation: _dot,
+                      builder: (_, __) => Container(
+                        width: 6, height: 6,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: _vm.isConnected
+                              ? _accent.withOpacity(_dot.value)
+                              : Colors.red.withOpacity(_dot.value),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      _vm.isConnected ? 'Connected' : _vm.devicesLoading ? 'Connecting…' : 'Offline',
+                      style: TextStyle(
+                        color: _vm.isConnected ? _accent : Colors.red.shade300,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
             const Spacer(),
-            // Connection status
-            _StatusBadge(connected: _vm.isConnected),
-            const SizedBox(width: 8),
-            // Tracker count
-            if (_vm.trackers.isNotEmpty)
+            // Phone HUD mini
+            if (_vm.phonePosition != null) ...[
+              _MiniHud(label: '${_vm.phonePosition!.speed.toStringAsFixed(0)}', unit: 'km/h', color: _accent),
+              const SizedBox(width: 8),
+            ],
+            // Device count badge
+            if (_vm.totalCount > 0)
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.2),
+                  gradient: LinearGradient(colors: [_accent.withOpacity(0.2), _accentDark.withOpacity(0.1)]),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.blue.withOpacity(0.5)),
+                  border: Border.all(color: _accent.withOpacity(0.3)),
                 ),
-                child: Text(
-                  '${_vm.trackers.length} tracker${_vm.trackers.length == 1 ? '' : 's'}',
-                  style: const TextStyle(color: Colors.lightBlue, fontSize: 11),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.local_shipping_rounded, color: Colors.white70, size: 13),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${_vm.onlineCount}/${_vm.totalCount}',
+                      style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700),
+                    ),
+                  ],
                 ),
               ),
-            const SizedBox(width: 8),
-            // Settings
-            IconButton(
-              icon: const Icon(Icons.settings_outlined, color: Colors.white70, size: 20),
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
-              onPressed: _showConfigDialog,
-            ),
+            const SizedBox(width: 4),
           ],
         ),
       ),
     ),
   );
 
-  // ── Tracker list (slide from right) ──────────────────────────────────────
-
-  Widget _buildTrackerList() => Positioned(
-    top: 100,
-    right: 12,
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: _vm.trackers.map((t) {
-        final isSelected = _infoTracker?.deviceId == t.deviceId;
-        return GestureDetector(
-          onTap: () {
-            setState(() {
-              _infoTracker = isSelected ? null : t;
-              _followPhone = false;
-            });
-            if (!isSelected) {
-              _mapController.move(t.position, math.max(_currentZoom, 15.0));
-            }
-          },
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            margin: const EdgeInsets.only(bottom: 6),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: isSelected
-                  ? _trackerColor(t.protocol).withOpacity(0.25)
-                  : const Color(0xCC0F1923),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: isSelected
-                    ? _trackerColor(t.protocol)
-                    : Colors.white12,
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  t.protocol == 'mobile' ? Icons.smartphone : Icons.gps_fixed,
-                  color: _trackerColor(t.protocol),
-                  size: 14,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  t.deviceId.length > 10
-                      ? '…${t.deviceId.substring(t.deviceId.length - 8)}'
-                      : t.deviceId,
-                  style: const TextStyle(color: Colors.white, fontSize: 12),
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  '${t.speed.toStringAsFixed(0)} km/h',
-                  style: const TextStyle(color: Colors.white54, fontSize: 11),
-                ),
-              ],
-            ),
-          ),
-        );
-      }).toList(),
-    ),
-  );
-
-  // ── Bottom HUD ────────────────────────────────────────────────────────────
-
-  Widget _buildBottomHud() {
-    final phone = _vm.phonePosition;
-    return Positioned(
-      bottom: 0, left: 0, right: 0,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
-        decoration: const BoxDecoration(
-          color: Color(0xEE0F1923),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: phone == null
-            ? const _AcquiringGpsRow()
-            : _PhoneHudRow(phone: phone),
-      ),
-    );
-  }
-
-  // ── Tracker info sheet ────────────────────────────────────────────────────
-
-  Widget _buildInfoSheet(TrackerPoint t) => Positioned(
-    bottom: 110,
-    left: 12,
-    right: 12,
-    child: Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: const Color(0xF00F1923),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _trackerColor(t.protocol).withOpacity(0.5)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                t.protocol == 'mobile' ? Icons.smartphone : Icons.directions_car,
-                color: _trackerColor(t.protocol),
-                size: 18,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  t.deviceId,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              GestureDetector(
-                onTap: () => setState(() => _infoTracker = null),
-                child: const Icon(Icons.close, color: Colors.white54, size: 18),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              _InfoChip(Icons.speed, '${t.speed.toStringAsFixed(1)} km/h', 'Speed'),
-              const SizedBox(width: 12),
-              _InfoChip(Icons.explore, '${t.bearing.toStringAsFixed(0)}°', 'Heading'),
-              const SizedBox(width: 12),
-              _InfoChip(Icons.wifi_tethering, t.protocol, 'Protocol'),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              const Icon(Icons.location_on, color: Colors.white38, size: 12),
-              const SizedBox(width: 4),
-              Text(
-                '${t.position.latitude.toStringAsFixed(6)}, '
-                '${t.position.longitude.toStringAsFixed(6)}',
-                style: const TextStyle(color: Colors.white54, fontSize: 11),
-              ),
-              const Spacer(),
-              Text(
-                _relativeTime(t.timestamp),
-                style: const TextStyle(color: Colors.white38, fontSize: 11),
-              ),
-            ],
-          ),
-        ],
-      ),
-    ),
-  );
-
-  String _relativeTime(DateTime t) {
-    final diff = DateTime.now().difference(t);
-    if (diff.inSeconds < 60)  return '${diff.inSeconds}s ago';
-    if (diff.inMinutes < 60)  return '${diff.inMinutes}m ago';
-    return '${diff.inHours}h ago';
-  }
-
-  // ── FABs ───────────────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════
+  //  FABs
+  // ═══════════════════════════════════════════════════════════════════════
 
   Widget _buildFabs() => Positioned(
-    right: 12,
-    bottom: 120,
+    right: 14,
+    bottom: MediaQuery.of(context).size.height * 0.18 + 16,
     child: Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Centre on phone
-        FloatingActionButton.small(
-          heroTag: 'center',
-          backgroundColor: _followPhone
-              ? const Color(0xFF00C896)
-              : const Color(0xFF1E2D3D),
-          onPressed: _recenter,
-          child: Icon(
-            Icons.my_location,
-            color: _followPhone ? Colors.white : Colors.white70,
-            size: 20,
-          ),
-        ),
-        const SizedBox(height: 8),
-        // Zoom in
-        FloatingActionButton.small(
-          heroTag: 'zoomin',
-          backgroundColor: const Color(0xFF1E2D3D),
-          onPressed: () {
-            _currentZoom = (_currentZoom + 1).clamp(3.0, 19.0);
-            _mapController.move(_mapController.camera.center, _currentZoom);
-          },
-          child: const Icon(Icons.add, color: Colors.white70, size: 20),
-        ),
-        const SizedBox(height: 8),
-        // Zoom out
-        FloatingActionButton.small(
-          heroTag: 'zoomout',
-          backgroundColor: const Color(0xFF1E2D3D),
-          onPressed: () {
-            _currentZoom = (_currentZoom - 1).clamp(3.0, 19.0);
-            _mapController.move(_mapController.camera.center, _currentZoom);
-          },
-          child: const Icon(Icons.remove, color: Colors.white70, size: 20),
-        ),
+        _fab(Icons.my_location_rounded, _followPhone ? _accent : _darkCard, _recenter),
+        const SizedBox(height: 10),
+        _fab(Icons.add_rounded, _darkCard, () {
+          _zoom = (_zoom + 1).clamp(3.0, 19.0);
+          _mapCtrl.move(_mapCtrl.camera.center, _zoom);
+        }),
+        const SizedBox(height: 10),
+        _fab(Icons.remove_rounded, _darkCard, () {
+          _zoom = (_zoom - 1).clamp(3.0, 19.0);
+          _mapCtrl.move(_mapCtrl.camera.center, _zoom);
+        }),
       ],
     ),
   );
 
-  // ── Config dialog ─────────────────────────────────────────────────────────
+  Widget _fab(IconData icon, Color bg, VoidCallback onTap) => Material(
+    color: bg,
+    shape: const CircleBorder(),
+    elevation: 4,
+    shadowColor: Colors.black38,
+    child: InkWell(
+      customBorder: const CircleBorder(),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Icon(icon, color: Colors.white, size: 20),
+      ),
+    ),
+  );
 
-  void _showConfigDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: _configSaved,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1A2733),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text(
-          'Tracker Server',
-          style: TextStyle(color: Colors.white, fontSize: 18),
-        ),
-        content: SingleChildScrollView(
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Selected device card
+  // ═══════════════════════════════════════════════════════════════════════
+
+  Widget _buildSelectedCard(TraknovaDevice d) {
+    final clr = _statusColor(d);
+    return Positioned(
+      left: 14, right: 14,
+      bottom: MediaQuery.of(context).size.height * 0.15 + 60,
+      child: Material(
+        color: _darkCard,
+        borderRadius: BorderRadius.circular(18),
+        elevation: 8,
+        shadowColor: Colors.black45,
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: clr.withOpacity(0.3)),
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
-                'Enter the RabbitMQ server details for live tracking.',
-                style: TextStyle(color: Colors.white54, fontSize: 13),
+              // Header row
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: clr.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(Icons.local_shipping_rounded, color: clr, size: 20),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(d.deviceName.isNotEmpty ? d.deviceName : (d.vehicleNo.isNotEmpty ? d.vehicleNo : d.imei),
+                        style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(d.imei,
+                        style: TextStyle(color: Colors.white.withOpacity(0.45), fontSize: 11),
+                      ),
+                    ],
+                  )),
+                  _statusPill(d),
+                  const SizedBox(width: 6),
+                  // WhatsApp share
+                  if (d.hasPosition)
+                    GestureDetector(
+                      onTap: () async {
+                        final lat = d.currentLatitude!;
+                        final lon = d.currentLongitude!;
+                        final name = d.deviceName.isNotEmpty ? d.deviceName : d.imei;
+                        final speed = d.currentSpeed.toStringAsFixed(0);
+                        final msg = '📍 *$name* - Live Location\n'
+                            'Speed: $speed km/h\n'
+                            'https://www.google.com/maps?q=$lat,$lon';
+                        final url = Uri.parse('https://wa.me/?text=${Uri.encodeComponent(msg)}');
+                        if (await canLaunchUrl(url)) {
+                          await launchUrl(url, mode: LaunchMode.externalApplication);
+                        }
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.06),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(Icons.share_rounded, color: Colors.white.withOpacity(0.45), size: 16),
+                      ),
+                    ),
+                  const SizedBox(width: 6),
+                  GestureDetector(
+                    onTap: () => _vm.selectDevice(null),
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.06),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.close_rounded, color: Colors.white54, size: 16),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 16),
-              _ConfigField(controller: _hostCtrl, label: 'Host / IP', hint: '192.168.1.100'),
-              const SizedBox(height: 10),
-              _ConfigField(controller: _portCtrl, label: 'WebSocket Port', hint: '15674', keyboard: TextInputType.number),
-              const SizedBox(height: 10),
-              _ConfigField(controller: _userCtrl, label: 'Username', hint: 'guest'),
-              const SizedBox(height: 10),
-              _ConfigField(controller: _passCtrl, label: 'Password', hint: 'guest', obscure: true),
+              const SizedBox(height: 12),
+              // Stats row
+              Row(
+                children: [
+                  _StatChip(Icons.speed_rounded, '${d.currentSpeed.toStringAsFixed(0)} km/h', 'Speed'),
+                  _StatChip(Icons.explore_rounded, '${d.currentDirection}°', 'Heading'),
+                  _StatChip(
+                    d.ignitionOn == true ? Icons.bolt_rounded : Icons.power_off_rounded,
+                    d.ignitionOn == true ? 'ON' : 'OFF',
+                    'Ignition',
+                  ),
+                  if (d.currentTimestamp != null)
+                    _StatChip(Icons.schedule_rounded, _relTime(d.currentTimestamp!), 'Updated'),
+                ],
+              ),
+              if (d.hasPosition) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(Icons.pin_drop_rounded, color: Colors.white.withOpacity(0.3), size: 12),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${d.currentLatitude!.toStringAsFixed(5)}, ${d.currentLongitude!.toStringAsFixed(5)}',
+                      style: TextStyle(color: Colors.white.withOpacity(0.35), fontSize: 11),
+                    ),
+                  ],
+                ),
+              ],
             ],
           ),
         ),
-        actions: [
-          if (_configSaved)
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
-            ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF00C896),
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () async {
-              final cfg = TrackerServerConfig(
-                host    : _hostCtrl.text.trim(),
-                port    : int.tryParse(_portCtrl.text.trim()) ?? 15674,
-                username: _userCtrl.text.trim(),
-                password: _passCtrl.text.trim(),
-              );
-              await _saveConfig(cfg);
-              // Dismiss dialog before async operations
-              if (ctx.mounted) Navigator.pop(ctx);
-              // Disconnect then reconnect with new config
-              await _vm.disconnect();
-              _applyConfig(cfg);
-            },
-            child: const Text('Connect'),
-          ),
-        ],
       ),
     );
   }
+
+  Widget _statusPill(TraknovaDevice d) {
+    final on = d.isOnline;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: (on ? Colors.green : Colors.red).withOpacity(0.12),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: (on ? Colors.green : Colors.red).withOpacity(0.4), width: 0.5),
+      ),
+      child: Text(
+        on ? 'ONLINE' : 'OFFLINE',
+        style: TextStyle(
+          color: on ? Colors.greenAccent : Colors.redAccent,
+          fontSize: 10, fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
+  String _relTime(DateTime t) {
+    final d = DateTime.now().difference(t);
+    if (d.inSeconds < 60) return '${d.inSeconds}s';
+    if (d.inMinutes < 60) return '${d.inMinutes}m';
+    if (d.inHours < 24)   return '${d.inHours}h';
+    return '${d.inDays}d';
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Draggable bottom sheet
+  // ═══════════════════════════════════════════════════════════════════════
+
+  Widget _buildBottomSheet() {
+    return DraggableScrollableSheet(
+      controller: _sheetCtrl,
+      initialChildSize: 0.15,
+      minChildSize: 0.08,
+      maxChildSize: 0.70,
+      snap: true,
+      snapSizes: const [0.08, 0.15, 0.45, 0.70],
+      builder: (ctx, scrollCtrl) {
+        return Container(
+          decoration: BoxDecoration(
+            color: _dark,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.4), blurRadius: 20, offset: const Offset(0, -6))],
+            border: Border(top: BorderSide(color: _accent.withOpacity(0.2))),
+          ),
+          child: NotificationListener<DraggableScrollableNotification>(
+            onNotification: (n) {
+              setState(() => _sheetExpanded = n.extent > 0.25);
+              return false;
+            },
+            child: CustomScrollView(
+              controller: scrollCtrl,
+              slivers: [
+                // Drag handle + quick info
+                SliverToBoxAdapter(child: _sheetHeader()),
+
+                // Search + filter (shown when expanded)
+                if (_sheetExpanded) ...[
+                  SliverToBoxAdapter(child: _searchBar()),
+                  SliverToBoxAdapter(child: _filterTabs()),
+                ],
+
+                // Loading / empty / device list
+                if (_vm.devicesLoading)
+                  const SliverFillRemaining(child: _LoadingState())
+                else if (_vm.filteredDevices.isEmpty)
+                  SliverFillRemaining(child: _EmptyState(hasDevices: _vm.totalCount > 0))
+                else
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(14, 4, 14, 24),
+                    sliver: SliverList.builder(
+                      itemCount: _vm.filteredDevices.length,
+                      itemBuilder: (_, i) => _DeviceCard(
+                        device: _vm.filteredDevices[i],
+                        selected: _vm.selectedDevice?.imei == _vm.filteredDevices[i].imei,
+                        statusColor: _statusColor(_vm.filteredDevices[i]),
+                        onTap: () => _focusDevice(_vm.filteredDevices[i]),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // ── Sheet header (drag handle + counts) ─────────────────────────────────
+
+  Widget _sheetHeader() => GestureDetector(
+    onTap: () {
+      final target = _sheetExpanded ? 0.15 : 0.45;
+      _sheetCtrl.animateTo(target,
+          duration: const Duration(milliseconds: 350), curve: Curves.easeInOut);
+    },
+    child: Container(
+      color: Colors.transparent, // hit-test area
+      padding: const EdgeInsets.fromLTRB(0, 10, 0, 8),
+      child: Column(
+        children: [
+          // Drag pill
+          Container(
+            width: 40, height: 4,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.25),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 10),
+          // Counts row
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18),
+            child: Row(
+              children: [
+                Text(
+                  'Vehicles',
+                  style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 16, fontWeight: FontWeight.w700),
+                ),
+                const Spacer(),
+                _CountBadge(label: 'All', count: _vm.totalCount, color: Colors.white54),
+                const SizedBox(width: 10),
+                _CountBadge(label: 'Online', count: _vm.onlineCount, color: Colors.greenAccent),
+                const SizedBox(width: 10),
+                _CountBadge(label: 'Offline', count: _vm.offlineCount, color: Colors.redAccent),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  // ── Search bar ──────────────────────────────────────────────────────────
+
+  Widget _searchBar() => Padding(
+    padding: const EdgeInsets.fromLTRB(14, 4, 14, 8),
+    child: TextField(
+      onChanged: _vm.setSearchQuery,
+      style: const TextStyle(color: Colors.white, fontSize: 14),
+      decoration: InputDecoration(
+        hintText: 'Search vehicle…',
+        hintStyle: TextStyle(color: Colors.white.withOpacity(0.25)),
+        prefixIcon: Icon(Icons.search_rounded, color: Colors.white.withOpacity(0.3), size: 20),
+        filled: true,
+        fillColor: _darkCard,
+        contentPadding: const EdgeInsets.symmetric(vertical: 10),
+        isDense: true,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide.none,
+        ),
+      ),
+    ),
+  );
+
+  // ── Filter tabs ─────────────────────────────────────────────────────────
+
+  Widget _filterTabs() => Padding(
+    padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+    child: Row(
+      children: [
+        _FilterChip('All', _vm.totalCount, _vm.filter == 'all', () => _vm.setFilter('all')),
+        const SizedBox(width: 8),
+        _FilterChip('Online', _vm.onlineCount, _vm.filter == 'online', () => _vm.setFilter('online')),
+        const SizedBox(width: 8),
+        _FilterChip('Offline', _vm.offlineCount, _vm.filter == 'offline', () => _vm.setFilter('offline')),
+      ],
+    ),
+  );
 }
 
-// ─── Reusable small widgets ───────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+//  Reusable Widgets
+// ═══════════════════════════════════════════════════════════════════════════════
 
-class _StatusBadge extends StatelessWidget {
-  final bool connected;
-  const _StatusBadge({required this.connected});
+// ── Device Card ───────────────────────────────────────────────────────────────
+
+class _DeviceCard extends StatelessWidget {
+  final TraknovaDevice device;
+  final bool selected;
+  final Color statusColor;
+  final VoidCallback onTap;
+
+  const _DeviceCard({
+    required this.device,
+    required this.selected,
+    required this.statusColor,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final online = device.isOnline;
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 250),
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: selected
+              ? statusColor.withOpacity(0.08)
+              : const Color(0xFF162636),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: selected ? statusColor.withOpacity(0.35) : Colors.white.withOpacity(0.04),
+          ),
+        ),
+        child: Row(
+          children: [
+            // Status dot + icon
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: statusColor.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                device.currentSpeed > 0
+                    ? Icons.local_shipping_rounded
+                    : Icons.local_shipping_outlined,
+                color: statusColor,
+                size: 18,
+              ),
+            ),
+            const SizedBox(width: 10),
+            // Info
+            Expanded(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  device.deviceName.isNotEmpty ? device.deviceName : (device.vehicleNo.isNotEmpty ? device.vehicleNo : device.imei),
+                  style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    Container(
+                      width: 6, height: 6,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: online ? Colors.green : Colors.red,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      online ? 'Online' : 'Offline',
+                      style: TextStyle(
+                        color: online ? Colors.green.shade300 : Colors.red.shade300,
+                        fontSize: 11,
+                      ),
+                    ),
+                    if (device.hasPosition && device.currentSpeed > 0) ...[
+                      Text('  •  ', style: TextStyle(color: Colors.white.withOpacity(0.2), fontSize: 11)),
+                      Text(
+                        '${device.currentSpeed.toStringAsFixed(0)} km/h',
+                        style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 11),
+                      ),
+                    ],
+                    if (device.currentDirection > 0) ...[
+                      Text('  •  ', style: TextStyle(color: Colors.white.withOpacity(0.2), fontSize: 11)),
+                      Text(
+                        '${_compassDir(device.currentDirection)} ${device.currentDirection}°',
+                        style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 11),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    // Ignition
+                    Icon(
+                      device.ignitionOn == true ? Icons.vpn_key_rounded : Icons.vpn_key_off_rounded,
+                      color: device.ignitionOn == true ? Colors.orangeAccent : Colors.white.withOpacity(0.2),
+                      size: 11,
+                    ),
+                    const SizedBox(width: 3),
+                    Text(
+                      device.ignitionOn == true ? 'IGN ON' : 'IGN OFF',
+                      style: TextStyle(
+                        color: device.ignitionOn == true ? Colors.orangeAccent : Colors.white.withOpacity(0.3),
+                        fontSize: 10, fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (device.currentTimestamp != null) ...[
+                      Text('  •  ', style: TextStyle(color: Colors.white.withOpacity(0.2), fontSize: 10)),
+                      Icon(Icons.schedule_rounded, color: Colors.white.withOpacity(0.25), size: 10),
+                      const SizedBox(width: 2),
+                      Text(
+                        _relTime(device.currentTimestamp!),
+                        style: TextStyle(color: Colors.white.withOpacity(0.35), fontSize: 10),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            )),
+            // WhatsApp share
+            if (device.hasPosition)
+              GestureDetector(
+                onTap: () => _shareWhatsApp(device),
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: Icon(Icons.share_rounded, color: Colors.white.withOpacity(0.25), size: 17),
+                ),
+              ),
+            const SizedBox(width: 2),
+            // Chevron
+            Icon(Icons.chevron_right_rounded, color: Colors.white.withOpacity(0.15), size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _relTime(DateTime t) {
+    final d = DateTime.now().difference(t);
+    if (d.inSeconds < 60) return '${d.inSeconds}s ago';
+    if (d.inMinutes < 60) return '${d.inMinutes}m ago';
+    if (d.inHours < 24) return '${d.inHours}h ago';
+    return '${d.inDays}d ago';
+  }
+
+  String _compassDir(int deg) {
+    const dirs = ['N','NE','E','SE','S','SW','W','NW'];
+    return dirs[((deg % 360) / 45).round() % 8];
+  }
+
+  Future<void> _shareWhatsApp(TraknovaDevice d) async {
+    if (!d.hasPosition) return;
+    final lat = d.currentLatitude!;
+    final lon = d.currentLongitude!;
+    final name = d.deviceName.isNotEmpty ? d.deviceName : d.imei;
+    final speed = d.currentSpeed.toStringAsFixed(0);
+    final msg = '📍 *$name* - Live Location\n'
+        'Speed: $speed km/h\n'
+        'https://www.google.com/maps?q=$lat,$lon';
+    final url = Uri.parse('https://wa.me/?text=${Uri.encodeComponent(msg)}');
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    }
+  }
+}
+
+// ── Filter chip ───────────────────────────────────────────────────────────────
+
+class _FilterChip extends StatelessWidget {
+  final String label;
+  final int count;
+  final bool active;
+  final VoidCallback onTap;
+  const _FilterChip(this.label, this.count, this.active, this.onTap);
+
+  @override
+  Widget build(BuildContext context) => Expanded(
+    child: GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        decoration: BoxDecoration(
+          color: active
+              ? const Color(0xFF00C896).withOpacity(0.15)
+              : Colors.white.withOpacity(0.03),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: active
+                ? const Color(0xFF00C896).withOpacity(0.4)
+                : Colors.white.withOpacity(0.06),
+          ),
+        ),
+        child: Column(
+          children: [
+            Text(
+              '$count',
+              style: TextStyle(
+                color: active ? const Color(0xFF00C896) : Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            Text(
+              label,
+              style: TextStyle(
+                color: active ? const Color(0xFF00C896).withOpacity(0.8) : Colors.white54,
+                fontSize: 11,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+// ── Count badge ───────────────────────────────────────────────────────────────
+
+class _CountBadge extends StatelessWidget {
+  final String label;
+  final int count;
+  final Color color;
+  const _CountBadge({required this.label, required this.count, required this.color});
 
   @override
   Widget build(BuildContext context) => Row(
     mainAxisSize: MainAxisSize.min,
     children: [
       Container(
-        width: 8, height: 8,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: connected ? Colors.greenAccent : Colors.red,
-        ),
+        width: 5, height: 5,
+        decoration: BoxDecoration(shape: BoxShape.circle, color: color),
       ),
-      const SizedBox(width: 5),
+      const SizedBox(width: 3),
       Text(
-        connected ? 'LIVE' : 'OFFLINE',
-        style: TextStyle(
-          color: connected ? Colors.greenAccent : Colors.red,
-          fontSize: 11,
-          fontWeight: FontWeight.bold,
-        ),
+        '$count',
+        style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w700),
       ),
     ],
   );
 }
 
-class _AcquiringGpsRow extends StatelessWidget {
-  const _AcquiringGpsRow();
+// ── Mini HUD ──────────────────────────────────────────────────────────────────
 
-  @override
-  Widget build(BuildContext context) => const Row(
-    mainAxisAlignment: MainAxisAlignment.center,
-    children: [
-      SizedBox(
-        width: 16, height: 16,
-        child: CircularProgressIndicator(
-          strokeWidth: 2,
-          color: Colors.white38,
-        ),
-      ),
-      SizedBox(width: 10),
-      Text('Acquiring GPS…', style: TextStyle(color: Colors.white54, fontSize: 13)),
-    ],
-  );
-}
-
-class _PhoneHudRow extends StatelessWidget {
-  final TrackerPoint phone;
-  const _PhoneHudRow({required this.phone});
-
-  @override
-  Widget build(BuildContext context) => Row(
-    children: [
-      // Speed (large)
-      Text(
-        phone.speed.toStringAsFixed(0),
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 42,
-          fontWeight: FontWeight.bold,
-          height: 1,
-        ),
-      ),
-      const SizedBox(width: 4),
-      const Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(height: 16),
-          Text('km/h', style: TextStyle(color: Colors.white54, fontSize: 13)),
-        ],
-      ),
-      const SizedBox(width: 24),
-      // Metrics
-      Expanded(
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            _HudMetric(
-              icon: Icons.explore,
-              value: '${phone.bearing.toStringAsFixed(0)}°',
-              label: 'Heading',
-            ),
-            _HudMetric(
-              icon: Icons.gps_fixed,
-              value: phone.accuracy != null
-                  ? '±${phone.accuracy!.toStringAsFixed(0)}m'
-                  : '—',
-              label: 'Accuracy',
-              color: (phone.accuracy ?? 100) <= 20
-                  ? Colors.greenAccent
-                  : (phone.accuracy ?? 100) <= 50
-                      ? Colors.orangeAccent
-                      : Colors.redAccent,
-            ),
-            _HudMetric(
-              icon: Icons.location_on,
-              value: '${phone.position.latitude.toStringAsFixed(4)}',
-              label: 'Latitude',
-            ),
-            _HudMetric(
-              icon: Icons.location_on_outlined,
-              value: '${phone.position.longitude.toStringAsFixed(4)}',
-              label: 'Longitude',
-            ),
-          ],
-        ),
-      ),
-    ],
-  );
-}
-
-class _HudMetric extends StatelessWidget {
-  final IconData icon;
-  final String  value;
-  final String  label;
-  final Color   color;
-
-  const _HudMetric({
-    required this.icon,
-    required this.value,
-    required this.label,
-    this.color = Colors.white,
-  });
+class _MiniHud extends StatelessWidget {
+  final String label;
+  final String unit;
+  final Color color;
+  const _MiniHud({required this.label, required this.unit, required this.color});
 
   @override
   Widget build(BuildContext context) => Column(
     mainAxisSize: MainAxisSize.min,
     children: [
-      Icon(icon, color: color.withOpacity(0.7), size: 14),
-      const SizedBox(height: 2),
-      Text(value, style: TextStyle(color: color, fontSize: 13, fontWeight: FontWeight.w600)),
-      Text(label,  style: const TextStyle(color: Colors.white38, fontSize: 10)),
+      Text(label, style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.w800, height: 1)),
+      Text(unit, style: TextStyle(color: color.withOpacity(0.6), fontSize: 9)),
     ],
   );
 }
 
-class _InfoChip extends StatelessWidget {
+// ── Stat chip (for selected device card) ──────────────────────────────────────
+
+class _StatChip extends StatelessWidget {
   final IconData icon;
-  final String   value;
-  final String   label;
-  const _InfoChip(this.icon, this.value, this.label);
+  final String value;
+  final String label;
+  const _StatChip(this.icon, this.value, this.label);
 
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Row(
-        children: [
-          Icon(icon, color: Colors.white54, size: 12),
-          const SizedBox(width: 3),
-          Text(label, style: const TextStyle(color: Colors.white38, fontSize: 10)),
-        ],
-      ),
-      Text(value, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
-    ],
+  Widget build(BuildContext context) => Expanded(
+    child: Column(
+      children: [
+        Icon(icon, color: Colors.white38, size: 14),
+        const SizedBox(height: 2),
+        Text(value, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+        Text(label, style: const TextStyle(color: Colors.white30, fontSize: 9)),
+      ],
+    ),
   );
 }
 
-class _ConfigField extends StatelessWidget {
-  final TextEditingController controller;
-  final String label, hint;
-  final TextInputType? keyboard;
-  final bool obscure;
-  const _ConfigField({
-    required this.controller,
-    required this.label,
-    required this.hint,
-    this.keyboard,
-    this.obscure = false,
-  });
+// ── Loading state ─────────────────────────────────────────────────────────────
+
+class _LoadingState extends StatelessWidget {
+  const _LoadingState();
+  @override
+  Widget build(BuildContext context) => Center(
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: 32, height: 32,
+          child: CircularProgressIndicator(
+            strokeWidth: 2.5,
+            color: const Color(0xFF00C896).withOpacity(0.7),
+          ),
+        ),
+        const SizedBox(height: 14),
+        Text('Loading vehicles…',
+            style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 13)),
+      ],
+    ),
+  );
+}
+
+// ── Empty state ───────────────────────────────────────────────────────────────
+
+class _EmptyState extends StatelessWidget {
+  final bool hasDevices; // true = filter hides them, false = no devices at all
+  const _EmptyState({required this.hasDevices});
 
   @override
-  Widget build(BuildContext context) => TextField(
-    controller    : controller,
-    keyboardType  : keyboard,
-    obscureText   : obscure,
-    style         : const TextStyle(color: Colors.white),
-    decoration    : InputDecoration(
-      labelText : label,
-      hintText  : hint,
-      labelStyle: const TextStyle(color: Colors.white54),
-      hintStyle : const TextStyle(color: Colors.white24),
-      filled    : true,
-      fillColor : Colors.white.withOpacity(0.05),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
-        borderSide  : const BorderSide(color: Colors.white24),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
-        borderSide  : const BorderSide(color: Colors.white24),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
-        borderSide  : const BorderSide(color: Color(0xFF00C896)),
+  Widget build(BuildContext context) => Center(
+    child: FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            hasDevices ? Icons.filter_list_off_rounded : Icons.local_shipping_outlined,
+            color: Colors.white.withOpacity(0.15),
+            size: 48,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            hasDevices ? 'No vehicles match filter' : 'No vehicles found',
+            style: TextStyle(color: Colors.white.withOpacity(0.35), fontSize: 14),
+          ),
+          if (!hasDevices) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Devices will appear when connected',
+              style: TextStyle(color: Colors.white.withOpacity(0.2), fontSize: 12),
+            ),
+          ],
+        ],
       ),
     ),
   );

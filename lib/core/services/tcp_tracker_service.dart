@@ -30,8 +30,8 @@ class TcpTrackerService {
 
   // ── Server config ─────────────────────────────────────────────────────────
 
-  /// Change this to the actual server IP before production use.
-  static const String _defaultHost = '68.183.35.63';
+  /// Traknova production server hostname.
+  static const String _defaultHost = 'app.traknova.co.uk';
   static const int _defaultPort = 4445;
 
   /// SharedPreferences key for the persistent virtual IMEI.

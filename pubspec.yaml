@@ -20,6 +20,7 @@ dependencies:
   flutter_foreground_task: ^6.0.0+1  # For background trip tracking
   geolocator: ^9.0.2  # For precise location tracking
   stomp_dart_client: ^1.0.2  # STOMP client for RabbitMQ
+  mqtt_client: ^10.0.0  # MQTT client for live tracking (web-mqtt port 15676)
   url_launcher: ^6.2.5  # For opening WhatsApp / Google Maps links
   flutter_map: ^6.1.0  # OpenStreetMap-based map widget
   latlong2: ^0.9.1  # LatLng coordinate type for flutter_map
@@ -28,6 +29,14 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^2.0.0
+  flutter_launcher_icons: ^0.14.3
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/logo.png"
+  adaptive_icon_background: "#0F1923"
+  adaptive_icon_foreground: "assets/logo.png"
 
 flutter:
   uses-material-design: true

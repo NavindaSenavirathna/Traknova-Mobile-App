@@ -12,6 +12,7 @@ class AuthService {
   
   String? _currentToken;
   String? _currentUsername;
+  String? _currentPassword; // memory-only — needed for web session login
 
   // Initialize service
   Future<void> initialize() async {
@@ -53,10 +54,11 @@ class AuthService {
   }
 
   // Store token and username in SQLite
-  Future<void> _storeCredentials(String token, String username) async {
+  Future<void> _storeCredentials(String token, String username, {String? password}) async {
     await _authPersistence.saveAuthToken(
       token: token,
       username: username,
+      refreshToken: password, // store password for web-session login
       expiresAt: DateTime.now().add(const Duration(hours: 24)), // Set 24-hour expiration
     );
     _currentToken = token;
@@ -69,6 +71,7 @@ class AuthService {
     await _authPersistence.clearStoredCredentials();
     _currentToken = null;
     _currentUsername = null;
+    _currentPassword = null;
     print('🗑️ Credentials cleared from SQLite');
   }
 
@@ -86,6 +89,7 @@ class AuthService {
         if (authToken != null) {
           _currentToken = authToken.token;
           _currentUsername = authToken.username;
+          _currentPassword = authToken.refreshToken; // restore password for web session
           
           // Update last activity
           await _authPersistence.updateLastActivity(authToken.username);
@@ -187,8 +191,9 @@ class AuthService {
           throw Exception('Token extraction failed - still getting JSON response instead of token');
         }
         
-        // Store token and username for future use
-        await _storeCredentials(token, username);
+        // Store token, username, and password for future use
+        await _storeCredentials(token, username, password: password);
+        _currentPassword = password; // keep in memory for web session
         print('✅ Token stored successfully for username: $username');
         return token;
       } catch (e) {
@@ -283,6 +288,20 @@ class AuthService {
       
       // Re-throw the error so the UI can show it to user
       throw Exception('Logout API failed: $e');
+    }
+  }
+
+  /// Password stored in-memory only — used by DeviceDataService for web login.
+  String? get currentPassword => _currentPassword;
+
+  /// Set password manually (e.g. when user provides it via a re-auth prompt).
+  /// Saves to memory AND persists in SQLite so it survives restarts.
+  Future<void> setPasswordForWebSession(String password) async {
+    _currentPassword = password;
+    // Re-save credentials with the password included
+    if (_currentToken != null && _currentUsername != null) {
+      await _storeCredentials(_currentToken!, _currentUsername!, password: password);
+      print('🔑 Password saved for web session (user: $_currentUsername)');
     }
   }
 

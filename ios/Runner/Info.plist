@@ -47,6 +47,17 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>We need camera access to scan QR codes for vehicle identification</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>We need location access to track your vehicle trip in real-time</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>We need location access in background to continuously track your trip</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>We need location access in background to continuously track your trip</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+		<string>fetch</string>
+	</array>
 	<key>io.flutter.embedded_views_preview</key>
 	<true/>
 </dict>

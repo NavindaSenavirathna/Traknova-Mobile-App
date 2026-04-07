@@ -8,6 +8,8 @@ import 'trip_tracking_service.dart';
 import 'auth_persistence_service.dart';
 import 'live_location_service.dart';
 import 'tcp_tracker_service.dart';
+import 'device_data_service.dart';
+import 'mqtt_live_service.dart';
 
 final GetIt locator = GetIt.instance;
 
@@ -27,6 +29,10 @@ void setupLocator() {
   // GPS / TCP tracker services
   locator.registerLazySingleton(() => LiveLocationService());
   locator.registerLazySingleton(() => TcpTrackerService());
+
+  // MQTT live tracking services
+  locator.registerLazySingleton(() => DeviceDataService());
+  locator.registerLazySingleton(() => MqttLiveService());
 
   // Register view models as singletons so they maintain state
   locator.registerLazySingleton(() => AuthViewModel(locator<AuthService>()));
