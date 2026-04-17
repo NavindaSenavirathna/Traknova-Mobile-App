@@ -305,7 +305,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
   // ── Error widgets ──────────────────────────────────────────────────────────
   Widget _buildErrorMessage(String errorMessage) {
-    if (errorMessage == 'USER_ALREADY_LOGGED_IN') {
+    final normalized = errorMessage.toLowerCase();
+
+    if (normalized.contains('already signed in on another device') ||
+        normalized.contains('already logged in another device') ||
+        normalized.contains('sign out there first')) {
       return Container(
         width: double.infinity,
         padding: const EdgeInsets.all(14),
@@ -335,7 +339,7 @@ class _LoginScreenState extends State<LoginScreen> {
             const SizedBox(width: 12),
             const Expanded(
               child: Text(
-                'User already logged in another device. Please sign out from the other device to continue.',
+                'This account is already signed in on another device. Sign out there first and try again.',
                 style: TextStyle(
                     color: Color(0xFFB0B0B0), fontSize: 13, height: 1.3),
               ),
@@ -361,8 +365,10 @@ class _LoginScreenState extends State<LoginScreen> {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: Colors.red[400]!),
       ),
-      child: Text(errorMessage,
-          style: const TextStyle(color: Colors.white70, fontSize: 13)),
+      child: Text(
+        errorMessage,
+        style: const TextStyle(color: Colors.white70, fontSize: 13),
+      ),
     );
   }
 }

@@ -3,13 +3,16 @@ import 'package:drive_master_app/presentation/screens/login_screen.dart';
 import 'package:drive_master_app/presentation/screens/dashboard_screen.dart';
 import 'package:drive_master_app/presentation/screens/splash_screen.dart';
 import 'package:drive_master_app/presentation/screens/trip_screen.dart';
+import 'package:drive_master_app/core/database/database_factory_initializer.dart';
 import 'package:drive_master_app/core/services/locator.dart';
 import 'package:drive_master_app/core/services/vehicle_service.dart';
 import 'package:drive_master_app/features/auth/auth_view_model.dart';
 import 'package:flutter/material.dart';
 
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  initializeDatabaseFactory();
   setupLocator(); // Initialize dependency injection
   runApp(const DriveMasterApp());
 }

@@ -7,8 +7,6 @@ import '../../core/services/api_service.dart';
 import '../../core/services/locator.dart';
 import '../../core/services/live_location_service.dart';
 import 'login_screen.dart';
-import 'userprofile_screen.dart';
-import 'filinginfo_screen.dart';
 import 'notification_screen.dart';
 import '../../features/tracking/live_tracking_screen.dart';
 
@@ -190,92 +188,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-  void _showBottomSheetModal() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        height: 240,
-        decoration: const BoxDecoration(
-          color: Color.fromARGB(255, 11, 11, 11),
-          borderRadius: BorderRadius.only(topLeft: Radius.circular(20), topRight: Radius.circular(20)),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 50, height: 5,
-              decoration: BoxDecoration(color: Colors.grey[500], borderRadius: BorderRadius.circular(10)),
-            ),
-            const SizedBox(height: 20),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _navButton(
-                    imagePath: 'assets/add_filling_icon.png',
-                    label: 'Add Filling\nDetails',
-                    onTap: () {
-                      Navigator.pop(ctx);
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => FillingInformationScreen()));
-                    },
-                  ),
-                  _navButton(
-                    imagePath: 'assets/user_profile_icon.png',
-                    label: 'User\nProfile',
-                    onTap: () {
-                      Navigator.pop(ctx);
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => UserProfileScreen()));
-                    },
-                  ),
-                  _navButton(
-                    imagePath: 'assets/logout_icon.png',
-                    label: 'Logout\nSession',
-                    onTap: () {
-                      Navigator.pop(ctx);
-                      _showLogoutDialog();
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _navButton({required String imagePath, required String label, required VoidCallback onTap}) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 80, height: 100,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(color: Colors.blue.withOpacity(0.3), blurRadius: 12, spreadRadius: 2),
-            BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 8, offset: const Offset(0, 2)),
-          ],
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            SizedBox(
-              width: 40, height: 40,
-              child: Image.asset(imagePath, fit: BoxFit.contain,
-                  errorBuilder: (_, __, ___) => const Icon(Icons.menu)),
-            ),
-            const SizedBox(height: 8),
-            Text(label, textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 11, color: Colors.black87)),
-          ],
-        ),
-      ),
-    );
-  }
-
   /// Share the current location on WhatsApp as a Google Maps link.
   Future<void> _shareOnWhatsApp() async {
     if (_currentLocation == null) return;
@@ -314,11 +226,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       body: SafeArea(
         child: Stack(
           children: [
-            // Main content
-            GestureDetector(
-              onPanUpdate: (details) {
-                if (details.delta.dy < -5) _showBottomSheetModal();
-              },
+            Positioned.fill(
               child: Container(
                 width: double.infinity,
                 height: double.infinity,
@@ -332,31 +240,62 @@ class _DashboardScreenState extends State<DashboardScreen>
                   padding: const EdgeInsets.only(bottom: 30),
                   child: Column(
                     children: [
-                      // Header
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Row(children: [
-                              Text('DRIVE', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.normal)),
-                              Text('MASTER', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                            ]),
-                            GestureDetector(
-                              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => WebSocketScreen())),
-                              child: Container(
-                                width: 36, height: 36,
-                                decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(18)),
-                                child: const Icon(Icons.notifications_outlined, color: Colors.white, size: 20),
-                              ),
+                            Image.asset(
+                              'assets/logo.png',
+                              width: 140,
+                              height: 34,
+                              fit: BoxFit.contain,
+                            ),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                GestureDetector(
+                                  onTap: () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(builder: (_) => WebSocketScreen()),
+                                  ),
+                                  child: Container(
+                                    width: 36,
+                                    height: 36,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withOpacity(0.2),
+                                      borderRadius: BorderRadius.circular(18),
+                                    ),
+                                    child: const Icon(
+                                      Icons.notifications_outlined,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                GestureDetector(
+                                  onTap: _showLogoutDialog,
+                                  child: Container(
+                                    width: 36,
+                                    height: 36,
+                                    decoration: BoxDecoration(
+                                      color: Colors.red.withOpacity(0.35),
+                                      borderRadius: BorderRadius.circular(18),
+                                    ),
+                                    child: const Icon(
+                                      Icons.logout,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
                       ),
-
                       const SizedBox(height: 8),
-
-                      // Status pill
                       AnimatedContainer(
                         duration: const Duration(milliseconds: 400),
                         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
@@ -368,7 +307,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Container(
-                              width: 10, height: 10,
+                              width: 10,
+                              height: 10,
                               decoration: BoxDecoration(
                                 color: _isTracking ? Colors.white : Colors.white54,
                                 shape: BoxShape.circle,
@@ -377,15 +317,17 @@ class _DashboardScreenState extends State<DashboardScreen>
                             const SizedBox(width: 8),
                             Text(
                               _isTracking ? 'LIVE  SENDING' : 'PAUSED',
-                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 1.2),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                                letterSpacing: 1.2,
+                              ),
                             ),
                           ],
                         ),
                       ),
-
                       const SizedBox(height: 28),
-
-                      // Location card
                       Container(
                         margin: const EdgeInsets.symmetric(horizontal: 20),
                         padding: const EdgeInsets.all(20),
@@ -401,11 +343,20 @@ class _DashboardScreenState extends State<DashboardScreen>
                           children: [
                             Row(
                               children: [
-                                Icon(Icons.location_on,
-                                    color: _isTracking ? Colors.greenAccent : Colors.white38, size: 22),
+                                Icon(
+                                  Icons.location_on,
+                                  color: _isTracking ? Colors.greenAccent : Colors.white38,
+                                  size: 22,
+                                ),
                                 const SizedBox(width: 8),
-                                const Text('Live Location',
-                                    style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                                const Text(
+                                  'Live Location',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
                               ],
                             ),
                             const Divider(color: Colors.white24, height: 24),
@@ -429,19 +380,13 @@ class _DashboardScreenState extends State<DashboardScreen>
                           ],
                         ),
                       ),
-
                       const SizedBox(height: 16),
-
-                      // Updates counter
                       if (_locationService.updatesSent > 0)
                         Text(
                           'Updates sent: ${_locationService.updatesSent}',
                           style: const TextStyle(color: Colors.white70, fontSize: 13),
                         ),
-
                       const SizedBox(height: 8),
-
-                      // Status message
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 30),
                         child: Text(
@@ -453,10 +398,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                           ),
                         ),
                       ),
-
                       const SizedBox(height: 32),
-
-                      // START / STOP button
                       Container(
                         width: double.infinity,
                         margin: const EdgeInsets.symmetric(horizontal: 20),
@@ -474,18 +416,25 @@ class _DashboardScreenState extends State<DashboardScreen>
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     SizedBox(
-                                      width: 20, height: 20,
+                                      width: 20,
+                                      height: 20,
                                       child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                                     ),
                                     SizedBox(width: 12),
-                                    Text('Starting...', style: TextStyle(fontSize: 16, color: Colors.white, fontWeight: FontWeight.w600)),
+                                    Text(
+                                      'Starting...',
+                                      style: TextStyle(fontSize: 16, color: Colors.white, fontWeight: FontWeight.w600),
+                                    ),
                                   ],
                                 )
                               : Row(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    Icon(_isTracking ? Icons.stop_circle_outlined : Icons.send_rounded,
-                                        color: Colors.white, size: 22),
+                                    Icon(
+                                      _isTracking ? Icons.stop_circle_outlined : Icons.send_rounded,
+                                      color: Colors.white,
+                                      size: 22,
+                                    ),
                                     const SizedBox(width: 10),
                                     Text(
                                       _isTracking ? 'Stop Sending Location' : 'Start Sending Location',
@@ -495,19 +444,14 @@ class _DashboardScreenState extends State<DashboardScreen>
                                 ),
                         ),
                       ),
-
                       const SizedBox(height: 16),
-
-                      // Live Tracking Map button
                       Container(
                         width: double.infinity,
                         margin: const EdgeInsets.symmetric(horizontal: 20),
                         child: ElevatedButton(
                           onPressed: () => Navigator.push(
                             context,
-                            MaterialPageRoute(
-                              builder: (_) => const LiveTrackingScreen(),
-                            ),
+                            MaterialPageRoute(builder: (_) => const LiveTrackingScreen()),
                           ),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF1E3A5F),
@@ -535,17 +479,14 @@ class _DashboardScreenState extends State<DashboardScreen>
                           ),
                         ),
                       ),
-
                       const SizedBox(height: 12),
-
-                      // Share on WhatsApp button
                       Container(
                         width: double.infinity,
                         margin: const EdgeInsets.symmetric(horizontal: 20),
                         child: ElevatedButton(
                           onPressed: _currentLocation == null ? null : _shareOnWhatsApp,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF25D366), // WhatsApp green
+                            backgroundColor: const Color(0xFF25D366),
                             disabledBackgroundColor: Colors.grey[700],
                             padding: const EdgeInsets.symmetric(vertical: 16),
                             shape: RoundedRectangleBorder(
@@ -579,10 +520,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                           ),
                         ),
                       ),
-
                       const SizedBox(height: 40),
-
-                      // Swipe-up arrows
                       AnimatedBuilder(
                         animation: _arrowAnimation,
                         builder: (_, __) => Transform.translate(
@@ -595,29 +533,35 @@ class _DashboardScreenState extends State<DashboardScreen>
                           ),
                         ),
                       ),
-
                       const SizedBox(height: 10),
                     ],
                   ),
                 ),
               ),
             ),
-
-            // Login success banner
             if (_showLoginSuccess)
               Positioned(
-                top: 10, left: 20, right: 20,
+                top: 10,
+                left: 20,
+                right: 20,
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   decoration: BoxDecoration(
                     color: const Color(0xFF6B46C1),
                     borderRadius: BorderRadius.circular(8),
-                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 8, offset: const Offset(0, 2))],
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.2),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
                   child: Row(
                     children: [
                       Container(
-                        width: 24, height: 24,
+                        width: 24,
+                        height: 24,
                         decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
                         child: const Icon(Icons.check, color: Color(0xFF6B46C1), size: 16),
                       ),
@@ -626,10 +570,14 @@ class _DashboardScreenState extends State<DashboardScreen>
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text('Login Successful',
-                                style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
-                            Text('Welcome back ${locator<AuthViewModel>().username ?? 'User'}',
-                                style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                            const Text(
+                              'Login Successful',
+                              style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
+                            ),
+                            Text(
+                              'Welcome back ${locator<AuthViewModel>().username ?? 'User'}',
+                              style: const TextStyle(color: Colors.white70, fontSize: 12),
+                            ),
                           ],
                         ),
                       ),

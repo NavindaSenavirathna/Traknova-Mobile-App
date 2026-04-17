@@ -107,6 +107,131 @@ class AuthService {
     }
   }
 
+  String _readErrorMessage(dynamic value) {
+    if (value == null) {
+      return '';
+    }
+
+    if (value is String) {
+      return value.trim();
+    }
+
+    if (value is Map) {
+      const preferredKeys = [
+        'message',
+        'error',
+        'detail',
+        'details',
+        'description',
+        'title',
+        'reason',
+      ];
+
+      for (final key in preferredKeys) {
+        final extracted = _readErrorMessage(value[key]);
+        if (extracted.isNotEmpty) {
+          return extracted;
+        }
+      }
+
+      for (final key in ['content', 'result', 'data', 'response']) {
+        final extracted = _readErrorMessage(value[key]);
+        if (extracted.isNotEmpty) {
+          return extracted;
+        }
+      }
+    }
+
+    if (value is List) {
+      for (final item in value) {
+        final extracted = _readErrorMessage(item);
+        if (extracted.isNotEmpty) {
+          return extracted;
+        }
+      }
+    }
+
+    return '';
+  }
+
+  String _normalizeLoginErrorMessage(String message, int statusCode) {
+    final normalized = message.trim();
+    final lower = normalized.toLowerCase();
+
+    if (lower.contains('already logged in') ||
+        lower.contains('already logged') ||
+        lower.contains('another device') ||
+        lower.contains('sign out from other device')) {
+      return 'This account is already signed in on another device. Sign out there first and try again.';
+    }
+
+    if (lower.contains('invalid') &&
+        (lower.contains('credential') ||
+            lower.contains('username') ||
+            lower.contains('password'))) {
+      return 'Invalid username or password.';
+    }
+
+    if (lower.contains('unauthorized') ||
+        lower.contains('authentication failed')) {
+      return 'Authentication failed. Please check your credentials and try again.';
+    }
+
+    if (lower.contains('locked')) {
+      return 'Your account is locked. Please contact support.';
+    }
+
+    if (lower.contains('disabled')) {
+      return 'Your account is disabled. Please contact support.';
+    }
+
+    if (lower.contains('expired')) {
+      return 'Your session has expired. Please sign in again.';
+    }
+
+    if (lower.contains('too many') || lower.contains('attempt')) {
+      return 'Too many login attempts. Please wait and try again.';
+    }
+
+    if (statusCode == 401) {
+      return 'Invalid username or password.';
+    }
+
+    if (statusCode == 403) {
+      return 'You do not have permission to sign in.';
+    }
+
+    if (statusCode == 408) {
+      return 'Login request timed out. Please try again.';
+    }
+
+    if (statusCode == 429) {
+      return 'Too many login attempts. Please wait and try again.';
+    }
+
+    if (statusCode >= 500 && statusCode < 600) {
+      return 'Server error. Please try again later.';
+    }
+
+    return normalized.isNotEmpty ? normalized : 'Login failed ($statusCode).';
+  }
+
+  String _extractLoginErrorMessage(http.Response response) {
+    final rawBody = response.body.trim();
+    String parsedMessage = '';
+
+    if (rawBody.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(rawBody);
+        parsedMessage = _readErrorMessage(decoded);
+      } catch (_) {
+        parsedMessage = rawBody;
+      }
+    }
+
+    return _normalizeLoginErrorMessage(parsedMessage, response.statusCode);
+  }
+
   Future<String> login({required String username, required String password}) async {
     final uri = Uri.parse('$_baseUrl$_tokenPath');
     final headers = {
@@ -202,35 +327,7 @@ class AuthService {
         throw Exception('Failed to parse login response: $e');
       }
     } else {
-      // Check for specific error messages from the API
-      String errorMessage = 'Login failed (${resp.statusCode}): ${resp.body}';
-      
-      try {
-        final responseBody = resp.body.toLowerCase();
-        
-        // Check for "user already logged in" error
-        if (responseBody.contains('user already logged in') || 
-            responseBody.contains('already logged in') ||
-            responseBody.contains('logged in another device') ||
-            responseBody.contains('sign out from other device')) {
-          throw Exception('USER_ALREADY_LOGGED_IN');
-        }
-        
-        // Check for other specific error patterns
-        if (resp.statusCode == 401) {
-          if (responseBody.contains('invalid') || responseBody.contains('credential')) {
-            throw Exception('Invalid username or password');
-          }
-        }
-        
-      } catch (e) {
-        if (e.toString().contains('USER_ALREADY_LOGGED_IN')) {
-          rethrow;
-        }
-        // If parsing fails, use original error message
-      }
-      
-      throw Exception(errorMessage);
+      throw Exception(_extractLoginErrorMessage(resp));
     }
   }
 

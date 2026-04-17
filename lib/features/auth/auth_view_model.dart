@@ -79,19 +79,30 @@ class AuthViewModel extends BaseViewModel {
           loginSuccess = false;
         }
       } catch (e) {
-        String errorString = e.toString();
-        
-        // Handle specific error for user already logged in
-        if (errorString.contains('USER_ALREADY_LOGGED_IN')) {
-          setError('USER_ALREADY_LOGGED_IN');
-        } else {
-          setError('Login failed: ${errorString.replaceAll('Exception: ', '')}');
-        }
+        setError(_formatAuthError(e));
         loginSuccess = false;
       }
     });
 
     return loginSuccess;
+  }
+
+  String _formatAuthError(Object error) {
+    final message = error.toString().replaceFirst('Exception: ', '').trim();
+
+    if (message == 'USER_ALREADY_LOGGED_IN') {
+      return 'This account is already signed in on another device. Sign out there first and try again.';
+    }
+
+    if (message.startsWith('Login failed: ')) {
+      return message.substring('Login failed: '.length).trim();
+    }
+
+    if (message.startsWith('Failed to parse login response: ')) {
+      return 'Unexpected login response from the server. Please try again later.';
+    }
+
+    return message.isNotEmpty ? message : 'Unable to sign in. Please try again.';
   }
 
   Future<void> logout() async {
@@ -119,10 +130,7 @@ class AuthViewModel extends BaseViewModel {
       _token = null;
       _username = null;
       _auth = AuthModel();
-      
-      setError('Logout API failed: ${e.toString()}');
-      // Re-throw so UI can handle the error
-      rethrow;
+      clearError();
     } finally {
       setLoading(false);
       notifyListeners();
