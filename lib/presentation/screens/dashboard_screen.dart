@@ -9,6 +9,7 @@ import '../../core/services/live_location_service.dart';
 import 'login_screen.dart';
 import 'notification_screen.dart';
 import '../../features/tracking/live_tracking_screen.dart';
+import '../../features/geofence/geofence_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -466,6 +467,48 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ),
                       ),
                       const SizedBox(height: 12),
+
+                      // GeoFence button
+                      Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.symmetric(horizontal: 20),
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const GeoFenceScreen(),
+                            ),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF1E3A5F),
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(30),
+                              side: const BorderSide(color: Color(0xFFFF9800), width: 1.5),
+                            ),
+                            elevation: 4,
+                          ),
+                          child: const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.fence_rounded, color: Color(0xFFFF9800), size: 22),
+                              SizedBox(width: 10),
+                              Text(
+                                'GeoFence Zones',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  color: Color(0xFFFF9800),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      // Share on WhatsApp button
                       Container(
                         width: double.infinity,
                         margin: const EdgeInsets.symmetric(horizontal: 20),

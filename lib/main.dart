@@ -6,6 +6,7 @@ import 'package:drive_master_app/presentation/screens/trip_screen.dart';
 import 'package:drive_master_app/core/database/database_factory_initializer.dart';
 import 'package:drive_master_app/core/services/locator.dart';
 import 'package:drive_master_app/core/services/vehicle_service.dart';
+import 'package:drive_master_app/core/services/geofence_notification_service.dart';
 import 'package:drive_master_app/features/auth/auth_view_model.dart';
 import 'package:flutter/material.dart';
 
@@ -32,6 +33,8 @@ class _DriveMasterAppState extends State<DriveMasterApp> with WidgetsBindingObse
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Wire navigator key to geofence notification service for overlay banners
+    GeoFenceNotificationService().setNavigatorKey(navigatorKey);
     print('📱 App lifecycle observer initialized');
   }
 
