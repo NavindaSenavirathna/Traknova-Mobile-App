@@ -29,6 +29,7 @@ class DeviceDataService {
   Map<String, dynamic> get levels => _levels;
   String get entityCode => _entityCode;
   bool get isLoaded => _isLoaded;
+  String? get sessionCookie => _sessionCookie;
 
   // ── Public API ──────────────────────────────────────────────────────────
 

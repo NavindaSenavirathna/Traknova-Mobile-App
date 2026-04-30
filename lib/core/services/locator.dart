@@ -10,6 +10,8 @@ import 'live_location_service.dart';
 import 'tcp_tracker_service.dart';
 import 'device_data_service.dart';
 import 'mqtt_live_service.dart';
+import 'geofence_api_service.dart';
+import 'geofence_notification_service.dart';
 
 final GetIt locator = GetIt.instance;
 
@@ -33,6 +35,10 @@ void setupLocator() {
   // MQTT live tracking services
   locator.registerLazySingleton(() => DeviceDataService());
   locator.registerLazySingleton(() => MqttLiveService());
+
+  // GeoFence services
+  locator.registerLazySingleton(() => GeoFenceApiService());
+  locator.registerLazySingleton(() => GeoFenceNotificationService());
 
   // Register view models as singletons so they maintain state
   locator.registerLazySingleton(() => AuthViewModel(locator<AuthService>()));

@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:mqtt_client/mqtt_client.dart';
 import 'package:mqtt_client/mqtt_server_client.dart';
 import 'device_data_service.dart';
+import '../models/geofence_models.dart';
 
 /// MQTT-based live tracking service that connects to the TrakNova
 /// RabbitMQ broker (web-mqtt plugin on port 15676) and subscribes
@@ -39,6 +40,13 @@ class MqttLiveService {
   final StreamController<bool> _connectionController =
       StreamController<bool>.broadcast();
 
+  // 🆕 GeoFence alert stream
+  final StreamController<GeoFenceAlert> _geoFenceAlertController =
+      StreamController<GeoFenceAlert>.broadcast();
+
+  /// The username for subscribing to user-specific geofence topic
+  String? _geoFenceUsername;
+
   /// Fires whenever any device position is updated via MQTT.
   Stream<void> get onDeviceUpdate => _updateController.stream;
 
@@ -48,10 +56,23 @@ class MqttLiveService {
   /// Fires when connection state changes.
   Stream<bool> get connectionStream => _connectionController.stream;
 
+  /// 🆕 Fires when a GeoFence alert is received via MQTT.
+  Stream<GeoFenceAlert> get onGeoFenceAlert => _geoFenceAlertController.stream;
+
   bool get isConnected => _isConnected;
   bool get isRunning => _isRunning;
 
   DeviceDataService get deviceDataService => _deviceDataService;
+
+  /// 🆕 Set the username for geofence alert subscription.
+  /// Call this before connect() or call subscribeGeoFenceAlerts() after.
+  void setGeoFenceUsername(String username) {
+    _geoFenceUsername = username;
+    // If already connected, subscribe immediately
+    if (_isConnected && _client != null) {
+      _subscribeGeoFence();
+    }
+  }
 
   // ── Public API ──────────────────────────────────────────────────────────
 
@@ -146,8 +167,19 @@ class MqttLiveService {
     _client!.subscribe(_topicDevices, MqttQos.atMostOnce);
     print('📡 [MqttLiveService] Subscribed to $_topicDevices');
 
+    // 🆕 Subscribe to geofence alerts if username is set
+    _subscribeGeoFence();
+
     // Listen for incoming messages
     _client!.updates!.listen(_onMessage);
+  }
+
+  /// 🆕 Subscribe to geofence user topic
+  void _subscribeGeoFence() {
+    if (_client == null || _geoFenceUsername == null) return;
+    final topic = 'AION/geo/user/$_geoFenceUsername';
+    _client!.subscribe(topic, MqttQos.atLeastOnce);
+    print('📡 [MqttLiveService] 🆕 Subscribed to GeoFence topic: $topic');
   }
 
   void _onMessage(List<MqttReceivedMessage<MqttMessage>> messages) {
@@ -159,20 +191,37 @@ class MqttLiveService {
         );
         final topic = msg.topic;
 
-        // Extract IMEI from topic: AION/geo/device/{imei}
-        final parts = topic.split('/');
-        if (parts.length < 4) continue;
-        final imei = parts.last;
-
         // Parse the JSON payload
         final data = jsonDecode(payload) as Map<String, dynamic>;
 
-        // Update the device in DeviceDataService (auto-creates if unknown)
-        _deviceDataService.autoDiscoverFromMqtt(imei, data);
+        // ─── 🆕 GeoFence Alert ───
+        if (topic.startsWith('AION/geo/user/')) {
+          try {
+            final alert = GeoFenceAlert.fromMqttPayload(data);
+            print('🚨 [MqttLiveService] GeoFence alert: '
+                '${alert.vehicleNo} ${alert.mode} ${alert.fenceName}');
+            if (!_geoFenceAlertController.isClosed) {
+              _geoFenceAlertController.add(alert);
+            }
+          } catch (e) {
+            print('⚠️ [MqttLiveService] GeoFence parse error: $e');
+          }
+          continue;
+        }
 
-        // Notify listeners
-        if (!_updateController.isClosed) {
-          _updateController.add(null);
+        // ─── Device Location (existing) ───
+        if (topic.startsWith('AION/geo/device/')) {
+          final parts = topic.split('/');
+          if (parts.length < 4) continue;
+          final imei = parts.last;
+
+          // Update the device in DeviceDataService (auto-creates if unknown)
+          _deviceDataService.autoDiscoverFromMqtt(imei, data);
+
+          // Notify listeners
+          if (!_updateController.isClosed) {
+            _updateController.add(null);
+          }
         }
       } catch (e) {
         // Silently skip malformed messages

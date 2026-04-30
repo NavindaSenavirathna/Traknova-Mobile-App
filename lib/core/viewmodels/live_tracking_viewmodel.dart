@@ -14,8 +14,7 @@ import '../services/auth_service.dart';
 /// 2. Phone GPS position (LiveLocationService)
 class LiveTrackingViewModel extends BaseViewModel {
   final MqttLiveService _mqttService = MqttLiveService();
-  // AuthService kept for future use (e.g. logout button)
-  // ignore: unused_field
+  // AuthService for geofence username and future features
   final AuthService _authService;
 
   StreamSubscription<void>? _mqttUpdateSub;
@@ -117,6 +116,13 @@ class LiveTrackingViewModel extends BaseViewModel {
     notifyListeners();
 
     try {
+      // Set geofence username for MQTT subscription
+      final username = await _authService.getStoredUsername();
+      if (username != null && username.isNotEmpty) {
+        _mqttService.setGeoFenceUsername(username);
+        print('🔐 [LiveTrackingVM] GeoFence username set: $username');
+      }
+
       // Connect MQTT — devices are auto-discovered as messages arrive
       print('🔌 [LiveTrackingVM] Connecting to MQTT...');
       await _mqttService.connect();
@@ -148,6 +154,8 @@ class LiveTrackingViewModel extends BaseViewModel {
     }
   }
 
+  bool _isDisposed = false;
+
   Future<void> disconnect() async {
     await _mqttUpdateSub?.cancel();
     _mqttUpdateSub = null;
@@ -158,7 +166,9 @@ class LiveTrackingViewModel extends BaseViewModel {
     await _gpsSub?.cancel();
     _gpsSub = null;
     await _mqttService.disconnect();
-    notifyListeners();
+    if (!_isDisposed) {
+      notifyListeners();
+    }
   }
 
   // ── Phone GPS handler ──────────────────────────────────────────────────
@@ -180,6 +190,7 @@ class LiveTrackingViewModel extends BaseViewModel {
 
   @override
   void dispose() {
+    _isDisposed = true;
     disconnect();
     super.dispose();
   }
