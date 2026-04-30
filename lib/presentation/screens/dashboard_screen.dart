@@ -17,11 +17,7 @@ class DashboardScreen extends StatefulWidget {
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
-class _DashboardScreenState extends State<DashboardScreen>
-    with TickerProviderStateMixin {
-  // Arrow animation
-  late AnimationController _arrowController;
-  late Animation<double> _arrowAnimation;
+class _DashboardScreenState extends State<DashboardScreen> {
 
   // Login success notification
   bool _showLoginSuccess = true;
@@ -38,15 +34,6 @@ class _DashboardScreenState extends State<DashboardScreen>
   @override
   void initState() {
     super.initState();
-
-    _arrowController = AnimationController(
-      duration: const Duration(seconds: 2),
-      vsync: this,
-    );
-    _arrowAnimation = Tween<double>(begin: 0, end: -20).animate(
-      CurvedAnimation(parent: _arrowController, curve: Curves.easeInOut),
-    );
-    _arrowController.repeat(reverse: true);
 
     _loginMessageTimer = Timer(const Duration(seconds: 3), () {
       if (mounted) setState(() => _showLoginSuccess = false);
@@ -67,7 +54,6 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   @override
   void dispose() {
-    _arrowController.dispose();
     _loginMessageTimer?.cancel();
     _locationSub?.cancel();
     super.dispose();
@@ -241,7 +227,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                   child: Column(
                     children: [
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+                        padding: const EdgeInsets.fromLTRB(0, 20, 20, 20),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
@@ -521,18 +507,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                         ),
                       ),
                       const SizedBox(height: 40),
-                      AnimatedBuilder(
-                        animation: _arrowAnimation,
-                        builder: (_, __) => Transform.translate(
-                          offset: Offset(0, _arrowAnimation.value),
-                          child: Column(
-                            children: [
-                              Icon(Icons.keyboard_arrow_up, color: Colors.red[400], size: 30),
-                              Icon(Icons.keyboard_arrow_up, color: Colors.red[400], size: 30),
-                            ],
-                          ),
-                        ),
-                      ),
                       const SizedBox(height: 10),
                     ],
                   ),
